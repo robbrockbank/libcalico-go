@@ -29,8 +29,13 @@ type IPNet struct {
 	net.IPNet
 }
 
+// Sub class net.HardwareAddr so that we can add JSON marshalling and unmarshalling.
+type MAC struct {
+	net.HardwareAddr
+}
+
 // MarshalJSON interface for an IP
-func (i *IP) MarshalJSON() ([]byte, error) {
+func (i IP) MarshalJSON() ([]byte, error) {
 	s, err := i.MarshalText()
 	if err != nil {
 		return nil, err
@@ -48,7 +53,7 @@ func (i *IP) UnmarshalJSON(b []byte) error {
 }
 
 // MarshalJSON interface for an IPNet
-func (i *IPNet) MarshalJSON() ([]byte, error) {
+func (i IPNet) MarshalJSON() ([]byte, error) {
 	return json.Marshal(i.String())
 }
 
@@ -63,7 +68,25 @@ func (i *IPNet) UnmarshalJSON(b []byte) error {
 	} else {
 		i.IP = ipnet.IP
 		i.Mask = ipnet.Mask
+		return nil
+	}
+}
 
+// MarshalJSON interface for a MAC
+func (m MAC) MarshalJSON() ([]byte, error) {
+	return json.Marshal(m.String())
+}
+
+// UnmarshalJSON interface for a MAC
+func (m *MAC) UnmarshalJSON(b []byte) error {
+	var s string
+	if err := json.Unmarshal(b, &s); err != nil {
+		return err
+	}
+	if mac, err := net.ParseMAC(s); err != nil {
+		return err
+	} else {
+		m.HardwareAddr = mac
 		return nil
 	}
 }
