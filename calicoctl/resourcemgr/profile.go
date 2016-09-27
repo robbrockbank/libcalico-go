@@ -50,5 +50,9 @@ func init() {
 			r := resource.(api.Profile)
 			return client.Profiles().List(r.Metadata)
 		},
+		func(client *client.Client, resource unversioned.Resource) (unversioned.Resource, error) {
+			r := resource.(api.Profile)
+			return client.Profiles().Get(r.Metadata)
+		},
 	)
 }

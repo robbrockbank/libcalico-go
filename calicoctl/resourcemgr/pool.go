@@ -51,5 +51,9 @@ func init() {
 			r := resource.(api.Pool)
 			return client.Pools().List(r.Metadata)
 		},
+		func(client *client.Client, resource unversioned.Resource) (unversioned.Resource, error) {
+			r := resource.(api.Pool)
+			return client.Pools().Get(r.Metadata)
+		},
 	)
 }

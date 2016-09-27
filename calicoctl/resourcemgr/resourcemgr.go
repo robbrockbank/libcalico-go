@@ -38,13 +38,14 @@ import (
 //	-  Commands to assist with generation of table output format of resources
 //	-  Commands to manage resource instances through an un-typed interface.
 type ResourceManager interface {
-	GetTableDefaultHeadings(wide bool) []string
-	GetTableTemplate(columns []string) (string, error)
+	ListTableDefaultHeadings(wide bool) []string
+	ListTableTemplate(columns []string) (string, error)
 	Apply(client *client.Client, resource unversioned.Resource) (unversioned.Resource, error)
 	Create(client *client.Client, resource unversioned.Resource) (unversioned.Resource, error)
 	Update(client *client.Client, resource unversioned.Resource) (unversioned.Resource, error)
 	Delete(client *client.Client, resource unversioned.Resource) (unversioned.Resource, error)
 	List(client *client.Client, resource unversioned.Resource) (unversioned.Resource, error)
+	Get(client *client.Client, resource unversioned.Resource) (unversioned.Resource, error)
 }
 
 type ResourceActionCommand func(*client.Client, unversioned.Resource) (unversioned.Resource, error)
@@ -57,7 +58,7 @@ type ResourceActionCommand func(*client.Client, unversioned.Resource) (unversion
 //	-  Template strings used to format output for each resource type.
 //	-  Functions to handle resource management actions (apply, create, update, delete, list).
 //         These functions are an untyped interface (generic Resource interfaces) that map through
-//         to the Calicc clients typed interface.
+//         to the Calico clients typed interface.
 type resourceHelper struct {
 	typeMetadata      unversioned.TypeMetadata
 	resourceType      reflect.Type
@@ -70,6 +71,7 @@ type resourceHelper struct {
 	update            ResourceActionCommand
 	delete            ResourceActionCommand
 	list              ResourceActionCommand
+	get               ResourceActionCommand
 }
 
 func (r resourceHelper) String() string {
@@ -81,7 +83,7 @@ var helpers map[unversioned.TypeMetadata]resourceHelper
 
 func registerResource(res unversioned.Resource, resList unversioned.Resource,
 	tableHeadings []string, tableHeadingsWide []string, headingsMap map[string]string,
-	apply, create, update, delete, list ResourceActionCommand) {
+	apply, create, update, delete, list, get ResourceActionCommand) {
 
 	if helpers == nil {
 		helpers = make(map[unversioned.TypeMetadata]resourceHelper)
@@ -100,6 +102,7 @@ func registerResource(res unversioned.Resource, resList unversioned.Resource,
 		update:            update,
 		delete:            delete,
 		list:              list,
+		get:               get,
 	}
 	helpers[tmd] = rh
 

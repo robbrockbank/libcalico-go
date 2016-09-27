@@ -31,6 +31,9 @@ func main() {
     replace        Replace a resource by filename or stdin.
     apply          Apply a resource by filename or stdin.  This creates a resource if
                    it does not exist, and replaces a resource if it does exists.
+    merge          Merge supplied updates in to the resource by filename or stdin.  Only
+                   the fields specified in the document are updated in the resource, all
+                   other fields remain unaltered.
     delete         Delete a resource identified by file, stdin or resource type and name.
     get            Get a resource identified by file, stdin or resource type and name.
     version        Display the version of calicoctl.

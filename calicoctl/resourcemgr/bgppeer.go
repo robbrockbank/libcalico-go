@@ -52,5 +52,9 @@ func init() {
 			r := resource.(api.BGPPeer)
 			return client.BGPPeers().List(r.Metadata)
 		},
+		func(client *client.Client, resource unversioned.Resource) (unversioned.Resource, error) {
+			r := resource.(api.BGPPeer)
+			return client.BGPPeers().Get(r.Metadata)
+		},
 	)
 }

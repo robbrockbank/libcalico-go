@@ -50,5 +50,9 @@ func init() {
 			r := resource.(api.Tier)
 			return client.Tiers().List(r.Metadata)
 		},
+		func(client *client.Client, resource unversioned.Resource) (unversioned.Resource, error) {
+			r := resource.(api.Tier)
+			return client.Tiers().Get(r.Metadata)
+		},
 	)
 }

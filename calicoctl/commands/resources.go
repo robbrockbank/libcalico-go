@@ -39,6 +39,8 @@ const (
 	actionUpdate
 	actionDelete
 	actionList
+	actionMerge
+	actionGet
 )
 
 // Convert loaded resources to a slice of resources for easier processing.
@@ -308,6 +310,8 @@ func executeResourceAction(args map[string]interface{}, client *client.Client, r
 		resourceOut, err = rm.Delete(client, resource)
 	case actionList:
 		resourceOut, err = rm.List(client, resource)
+	case actionGet:
+		resourceOut, err = rm.Get(client, resource)
 	}
 
 	// Skip over some errors depending on command line options.

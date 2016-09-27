@@ -95,11 +95,11 @@ func (r resourcePrinterTable) print(resources []unversioned.Resource) error {
 		// headings for that resource type.
 		headings := r.headings
 		if r.headings == nil {
-			headings = rm.GetTableDefaultHeadings(r.wide)
+			headings = rm.ListTableDefaultHeadings(r.wide)
 		}
 
 		// Look up the template string for the specific resource type.
-		tpls, err := rm.GetTableTemplate(headings)
+		tpls, err := rm.ListTableTemplate(headings)
 		if err != nil {
 			return err
 		}
