@@ -219,8 +219,8 @@ func (c *untyped) kvPairToResource(kvp *model.KVPair) resource {
 	// decoded it.
 	out := kvp.Value.(resource)
 
-	// Remove fields that should not be persisted and set the resource version.
-	out.GetObjectMeta().SetResourceVersion("")
+	// Remove the SelfLink which Calico does not use, and set the ResourceVersion from the
+	// value returned from the backend datastore.
 	out.GetObjectMeta().SetSelfLink("")
 	out.GetObjectMeta().SetResourceVersion(kvp.Revision)
 

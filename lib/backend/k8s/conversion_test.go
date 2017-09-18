@@ -685,7 +685,7 @@ var _ = Describe("Test Namespace conversion", func() {
 			Spec: k8sapi.NamespaceSpec{},
 		}
 
-		p, err := c.namespaceToProfile(&ns)
+		p, err := c.NamespaceToProfile(&ns)
 		Expect(err).NotTo(HaveOccurred())
 
 		// Ensure rules are correct for profile.
@@ -713,7 +713,7 @@ var _ = Describe("Test Namespace conversion", func() {
 			Spec: k8sapi.NamespaceSpec{},
 		}
 
-		p, err := c.namespaceToProfile(&ns)
+		p, err := c.NamespaceToProfile(&ns)
 		Expect(err).NotTo(HaveOccurred())
 
 		// Ensure rules are correct.
@@ -743,7 +743,7 @@ var _ = Describe("Test Namespace conversion", func() {
 		}
 
 		// Ensure it generates the correct Profile.
-		p, err := c.namespaceToProfile(&ns)
+		p, err := c.NamespaceToProfile(&ns)
 		Expect(err).NotTo(HaveOccurred())
 		// Ensure rules are correct for profile.
 		inboundRules := p.Value.(*model.Profile).Rules.InboundRules
@@ -769,7 +769,7 @@ var _ = Describe("Test Namespace conversion", func() {
 		}
 
 		By("converting to a Profile", func() {
-			_, err := c.namespaceToProfile(&ns)
+			_, err := c.NamespaceToProfile(&ns)
 			Expect(err).NotTo(HaveOccurred())
 		})
 	})
@@ -786,7 +786,7 @@ var _ = Describe("Test Namespace conversion", func() {
 		}
 
 		By("converting to a Profile", func() {
-			p, err := c.namespaceToProfile(&ns)
+			p, err := c.NamespaceToProfile(&ns)
 			Expect(err).NotTo(HaveOccurred())
 
 			// Ensure rules are correct.

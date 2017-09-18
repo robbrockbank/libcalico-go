@@ -50,15 +50,15 @@ type IPIPConfiguration struct {
 	// addresses within this pool.  A mode of "cross-subnet" will only use IPIP
 	// tunneling when the destination node is on a different subnet to the
 	// originating node.  The default value (if not specified) is "always".
-	Mode Mode `json:"mode,omitempty" validate:"omitempty,ipipmode"`
+	Mode IPIPMode `json:"mode,omitempty" validate:"omitempty,ipipmode"`
 }
 
-type Mode string
+type IPIPMode string
 
 const (
-	Off         Mode = "Off"
-	Always           = "Always"
-	CrossSubnet      = "CrossSubnet"
+	Off         IPIPMode = "Off"
+	Always               = "Always"
+	CrossSubnet          = "CrossSubnet"
 )
 const DefaultMode = Always
 

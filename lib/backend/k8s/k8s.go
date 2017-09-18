@@ -482,7 +482,7 @@ func (c *KubeClient) listProfiles(l model.ProfileListOptions) ([]*model.KVPair, 
 	// For each Namespace, return a profile.
 	ret := []*model.KVPair{}
 	for _, ns := range namespaces.Items {
-		kvp, err := c.converter.namespaceToProfile(&ns)
+		kvp, err := c.converter.NamespaceToProfile(&ns)
 		if err != nil {
 			return nil, err
 		}
@@ -505,7 +505,7 @@ func (c *KubeClient) getProfile(k model.ProfileKey) (*model.KVPair, error) {
 		return nil, resources.K8sErrorToCalico(err, k)
 	}
 
-	return c.converter.namespaceToProfile(namespace)
+	return c.converter.NamespaceToProfile(namespace)
 }
 
 // applyWorkloadEndpoint patches the existing Pod to include an IP address, if
