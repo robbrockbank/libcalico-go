@@ -71,7 +71,7 @@ func (c *resources) Create(opts options.SetOptions, kind, ns string, in resource
 		return nil, cerrors.ErrorValidation{
 			ErroredFields: []cerrors.ErroredField{{
 				Name:   "Metadata.ResourceVersion",
-				Reason: "ResourceVersion should not be set for a Create request",
+				Reason: "field must not be set for a Create request",
 				Value:  in.GetObjectMeta().GetResourceVersion(),
 			}},
 		}
@@ -99,7 +99,7 @@ func (c *resources) Update(opts options.SetOptions, kind, ns string, in resource
 		return nil, cerrors.ErrorValidation{
 			ErroredFields: []cerrors.ErroredField{{
 				Name:   "Metadata.ResourceVersion",
-				Reason: "ResourceVersion must be set for an Update request",
+				Reason: "field must be set for an Update request",
 				Value:  in.GetObjectMeta().GetResourceVersion(),
 			}},
 		}

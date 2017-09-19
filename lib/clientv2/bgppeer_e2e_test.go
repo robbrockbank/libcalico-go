@@ -57,8 +57,9 @@ var _ = testutils.E2eDatastoreDescribe("BGPPeer tests", testutils.DatastoreAll, 
 				ObjectMeta: metav1.ObjectMeta{Name: name1, ResourceVersion: "12345"},
 				Spec:       spec1,
 			}, options.SetOptions{})
-			Expect(outError).To(HaveOccurred())
 			Expect(res).To(BeNil())
+			Expect(outError).To(HaveOccurred())
+			Expect(outError.Error()).To(Equal("error with field Metadata.ResourceVersion = '12345' (field must not be set for a Create request)"))
 
 			By("Creating a new BGPPeer with name1/spec1")
 			res1, outError := c.BGPPeers().Create(&apiv2.BGPPeer{
@@ -91,6 +92,7 @@ var _ = testutils.E2eDatastoreDescribe("BGPPeer tests", testutils.DatastoreAll, 
 			By("Getting BGPPeer (name2) before it is created")
 			res, outError = c.BGPPeers().Get(name2, options.GetOptions{})
 			Expect(outError).To(HaveOccurred())
+			Expect(outError.Error()).To(Equal("resource does not exist: BGPPeer(" + name2 + ")"))
 
 			By("Listing all the BGPPeers, expecting a single result with name1/spec1")
 			outList, outError := c.BGPPeers().List(options.ListOptions{})
@@ -128,6 +130,14 @@ var _ = testutils.E2eDatastoreDescribe("BGPPeer tests", testutils.DatastoreAll, 
 			// Track the version of the updated name1 data.
 			rv1_2 := res1.ObjectMeta.ResourceVersion
 
+			By("Updating BGPPeer name1 without specifying a resource version")
+			res1.Spec = spec1
+			res1.ObjectMeta.ResourceVersion = ""
+			res, outError = c.BGPPeers().Update(res1, options.SetOptions{})
+			Expect(outError).To(HaveOccurred())
+			Expect(outError.Error()).To(Equal("error with field Metadata.ResourceVersion = '' (field must be set for an Update request)"))
+			Expect(res).To(BeNil())
+
 			By("Updating BGPPeer name1 using the previous resource version")
 			res1.Spec = spec1
 			res1.ObjectMeta.ResourceVersion = rv1_1
@@ -164,6 +174,7 @@ var _ = testutils.E2eDatastoreDescribe("BGPPeer tests", testutils.DatastoreAll, 
 			By("Deleting BGPPeer (name1) with the old resource version")
 			outError = c.BGPPeers().Delete(name1, options.DeleteOptions{ResourceVersion: rv1_1})
 			Expect(outError).To(HaveOccurred())
+			Expect(outError.Error()).To(Equal("update conflict: BGPPeer(" + name1 + ")"))
 
 			By("Deleting BGPPeer (name1) with the new resource version")
 			outError = c.BGPPeers().Delete(name1, options.DeleteOptions{ResourceVersion: rv1_2})
@@ -178,6 +189,7 @@ var _ = testutils.E2eDatastoreDescribe("BGPPeer tests", testutils.DatastoreAll, 
 			time.Sleep(2 * time.Second)
 			_, outError = c.BGPPeers().Get(name2, options.GetOptions{})
 			Expect(outError).To(HaveOccurred())
+			Expect(outError.Error()).To(Equal("resource does not exist: BGPPeer(" + name2 + ")"))
 
 			By("Creating BGPPeer name2 with a 2s TTL and waiting for the entry to be deleted")
 			_, outError = c.BGPPeers().Create(&apiv2.BGPPeer{
@@ -191,10 +203,12 @@ var _ = testutils.E2eDatastoreDescribe("BGPPeer tests", testutils.DatastoreAll, 
 			time.Sleep(2 * time.Second)
 			_, outError = c.BGPPeers().Get(name2, options.GetOptions{})
 			Expect(outError).To(HaveOccurred())
+			Expect(outError.Error()).To(Equal("resource does not exist: BGPPeer(" + name2 + ")"))
 
 			By("Attempting to deleting BGPPeer (name2) again")
 			outError = c.BGPPeers().Delete(name2, options.DeleteOptions{})
 			Expect(outError).To(HaveOccurred())
+			Expect(outError.Error()).To(Equal("resource does not exist: BGPPeer(" + name2 + ")"))
 
 			By("Listing all BGPPeers and expecting no items")
 			outList, outError = c.BGPPeers().List(options.ListOptions{})
@@ -204,6 +218,7 @@ var _ = testutils.E2eDatastoreDescribe("BGPPeer tests", testutils.DatastoreAll, 
 			By("Getting BGPPeer (name2) and expecting an error")
 			res, outError = c.BGPPeers().Get(name2, options.GetOptions{})
 			Expect(outError).To(HaveOccurred())
+			Expect(outError.Error()).To(Equal("resource does not exist: BGPPeer(" + name2 + ")"))
 		},
 
 		// Test 1: Pass two fully populated BGPPeerSpecs and expect the series of operations to succeed.
