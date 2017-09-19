@@ -333,8 +333,9 @@ func (c *EtcdV3Client) List(l model.ListInterface, revision string) (*model.KVPa
 	// The terminating / for a prefix Get ensures for a prefix of "/a" we only return "child entries"
 	// of "/a" such as "/a/x" and not siblings such as "/ab".
 	ops := []clientv3.OpOption{}
-	if l.KeyFromDefaultPath(key) != nil {
+	if l.KeyFromDefaultPath(key) == nil {
 		// The key not a fully qualified key - it must be a prefix.
+		logCxt.Info("Performing a prefix query")
 		if !strings.HasSuffix(key, "/") {
 			key += "/"
 		}
@@ -358,7 +359,7 @@ func (c *EtcdV3Client) List(l model.ListInterface, revision string) (*model.KVPa
 		logCxt.WithError(err).Info("Error returned from etcdv3 client")
 		return nil, errors.ErrorDatastoreError{Err: err}
 	}
-	log.Debugf("Found %d results", len(resp.Kvs))
+	logCxt.WithField("numResults", len(resp.Kvs)).Debug("Processing response from etcdv3")
 
 	list := filterEtcdV3List(resp.Kvs, l)
 	return &model.KVPairList{
@@ -410,10 +411,7 @@ func (c *EtcdV3Client) Syncer(callbacks api.SyncerCallbacks) api.Syncer {
 func filterEtcdV3List(pairs []*mvccpb.KeyValue, l model.ListInterface) []*model.KVPair {
 	kvs := []*model.KVPair{}
 	for _, p := range pairs {
-		log.Debugf("Maybe filter etcdv3-key: %s", p.Key)
-		if p.Key[len(p.Key)-1] != '/' {
-			continue
-		}
+		log.WithField("etcdv3-key", p.Key).Debug("Processing etcdv3 entry")
 		if k := l.KeyFromDefaultPath(string(p.Key[:len(p.Key)-1])); k != nil {
 			log.WithField("model-key", k).Debugf("Key is valid and converted to model-key")
 			if v, err := model.ParseValue(k, p.Value); err == nil {
