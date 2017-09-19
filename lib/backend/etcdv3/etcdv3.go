@@ -412,7 +412,7 @@ func filterEtcdV3List(pairs []*mvccpb.KeyValue, l model.ListInterface) []*model.
 	kvs := []*model.KVPair{}
 	for _, p := range pairs {
 		log.WithField("etcdv3-key", p.Key).Debug("Processing etcdv3 entry")
-		if k := l.KeyFromDefaultPath(string(p.Key[:len(p.Key)-1])); k != nil {
+		if k := l.KeyFromDefaultPath(string(p.Key)); k != nil {
 			log.WithField("model-key", k).Debugf("Key is valid and converted to model-key")
 			if v, err := model.ParseValue(k, p.Value); err == nil {
 				log.Debug("Value is valid - filter value into list")
