@@ -76,25 +76,3 @@ func NewBGPPeerList() *BGPPeerList {
 		},
 	}
 }
-
-// GetObjectKind returns the kind of this object.  Required to satisfy Object interface
-/*
-func (e *BGPPeer) GetObjectKind() schema.ObjectKind {
-	return &e.TypeMeta
-}
-
-// GetObjectMeta returns the object metadata of this object. Required to satisfy ObjectMetaAccessor interface
-func (e *BGPPeer) GetObjectMeta() metav1.Object {
-	return &e.Metadata
-}
-
-// GetObjectKind returns the kind of this object. Required to satisfy Object interface
-func (el *BGPPeerList) GetObjectKind() schema.ObjectKind {
-	return &el.TypeMeta
-}
-
-// GetListMeta returns the list metadata of this object. Required to satisfy ListMetaAccessor interface
-func (el *BGPPeerList) GetListMeta() metav1.List {
-	return &el.Metadata
-}
-*/
