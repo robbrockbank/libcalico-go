@@ -203,8 +203,11 @@ func (c *EtcdV3Client) Update(d *model.KVPair) (*model.KVPair, error) {
 	return d, nil
 }
 
-// Apply an existing entry in the datastore.  This ignores whether an entry already
-// exists.
+//TODO Remove once we get rid of the v1 client.  Apply should no longer be supported
+// at least in it's current guise.  Apply will need to be handled further up the stack
+// by performing a Get/Create or Update to ensure we don't lose certain read-only Metadata.
+// It's possible that we will just perform that processing in the clients (e.g. calicoctl),
+// but that is to be decided.
 func (c *EtcdV3Client) Apply(d *model.KVPair) (*model.KVPair, error) {
 	logCxt := log.WithFields(log.Fields{"key": d.Key, "value": d.Value, "ttl": d.TTL, "rev": d.Revision})
 	logCxt.Debug("Processing Apply request")
