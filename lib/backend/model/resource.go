@@ -30,13 +30,13 @@ var (
 	matchGlobalResource     = regexp.MustCompile("^/calico/resources/v2/([^/]+)/([^/]+)$")
 	matchNamespacedResource = regexp.MustCompile("^/calico/resources/v2/([^/]+)/([^/]+)/([^/]+)$")
 	kindToType              = map[string]reflect.Type{
-		strings.ToLower(apiv2.KindBGPPeer):          reflect.TypeOf(apiv2.BGPPeer{}),
-		strings.ToLower(apiv2.KindIPPool):           reflect.TypeOf(apiv2.IPPool{}),
-		strings.ToLower(apiv2.KindNode):             reflect.TypeOf(apiv2.Node{}),
-		strings.ToLower(apiv2.KindHostEndpoint):     reflect.TypeOf(apiv2.HostEndpoint{}),
-		strings.ToLower(apiv2.KindNetworkPolicy):    reflect.TypeOf(apiv2.NetworkPolicy{}),
-		strings.ToLower(apiv2.KindNetworkPolicy):    reflect.TypeOf(apiv2.NetworkPolicy{}),
-		strings.ToLower(apiv2.KindWorkloadEndpoint): reflect.TypeOf(apiv2.WorkloadEndpoint{}),
+		strings.ToLower(apiv2.KindBGPPeer):             reflect.TypeOf(apiv2.BGPPeer{}),
+		strings.ToLower(apiv2.KindIPPool):              reflect.TypeOf(apiv2.IPPool{}),
+		strings.ToLower(apiv2.KindNode):                reflect.TypeOf(apiv2.Node{}),
+		strings.ToLower(apiv2.KindHostEndpoint):        reflect.TypeOf(apiv2.HostEndpoint{}),
+		strings.ToLower(apiv2.KindNetworkPolicy):       reflect.TypeOf(apiv2.NetworkPolicy{}),
+		strings.ToLower(apiv2.KindGlobalNetworkPolicy): reflect.TypeOf(apiv2.GlobalNetworkPolicy{}),
+		strings.ToLower(apiv2.KindWorkloadEndpoint):    reflect.TypeOf(apiv2.WorkloadEndpoint{}),
 	}
 )
 
@@ -56,9 +56,8 @@ func (key ResourceKey) defaultPath() (string, error) {
 func (key ResourceKey) defaultDeletePath() (string, error) {
 	if namespace.IsNamespaced(key.Kind) {
 		return fmt.Sprintf("/calico/resources/v2/%s/%s/%s", strings.ToLower(key.Kind), key.Namespace, key.Name), nil
-	} else {
-		return fmt.Sprintf("/calico/resources/v2/%s/%s", strings.ToLower(key.Kind), key.Name), nil
 	}
+	return fmt.Sprintf("/calico/resources/v2/%s/%s", strings.ToLower(key.Kind), key.Name), nil
 }
 
 func (key ResourceKey) defaultDeleteParentPaths() ([]string, error) {
@@ -68,7 +67,7 @@ func (key ResourceKey) defaultDeleteParentPaths() ([]string, error) {
 func (key ResourceKey) valueType() reflect.Type {
 	t := kindToType[strings.ToLower(key.Kind)]
 	if t == nil {
-		panic("Unexpected resource kind: " + key.Kind)
+		log.Fatal("Unexpected resource kind: " + key.Kind)
 	}
 	return t
 }
@@ -76,9 +75,8 @@ func (key ResourceKey) valueType() reflect.Type {
 func (key ResourceKey) String() string {
 	if namespace.IsNamespaced(key.Kind) {
 		return fmt.Sprintf("%s(%s/%s)", key.Kind, key.Namespace, key.Name)
-	} else {
-		return fmt.Sprintf("%s(%s)", key.Kind, key.Name)
 	}
+	return fmt.Sprintf("%s(%s)", key.Kind, key.Name)
 }
 
 type ResourceListOptions struct {
@@ -92,7 +90,7 @@ type ResourceListOptions struct {
 
 func (options ResourceListOptions) KeyFromDefaultPath(path string) Key {
 	if len(options.Kind) == 0 {
-		panic("Kind must be specified in List option but is not")
+		log.Fatal("Kind must be specified in List option but is not")
 	}
 
 	if namespace.IsNamespaced(options.Kind) {
@@ -121,30 +119,30 @@ func (options ResourceListOptions) KeyFromDefaultPath(path string) Key {
 			return nil
 		}
 		return ResourceKey{Kind: options.Kind, Namespace: namespace, Name: name}
-	} else {
-		log.Debugf("Get Global Resource key from %s", path)
-		r := matchGlobalResource.FindAllStringSubmatch(path, -1)
-		if len(r) != 1 {
-			log.Debugf("Didn't match regex")
-			return nil
-		}
-		kind := r[0][1]
-		name := r[0][2]
-		if kind != strings.ToLower(options.Kind) {
-			log.Debugf("Didn't match name %s != %s", options.Kind, kind)
-			return nil
-		}
-		if len(options.Name) != 0 && name != options.Name {
-			log.Debugf("Didn't match name %s != %s", options.Name, name)
-			return nil
-		}
-		return ResourceKey{Kind: options.Kind, Name: name}
 	}
+
+	log.Debugf("Get Global Resource key from %s", path)
+	r := matchGlobalResource.FindAllStringSubmatch(path, -1)
+	if len(r) != 1 {
+		log.Debugf("Didn't match regex")
+		return nil
+	}
+	kind := r[0][1]
+	name := r[0][2]
+	if kind != strings.ToLower(options.Kind) {
+		log.Debugf("Didn't match name %s != %s", options.Kind, kind)
+		return nil
+	}
+	if len(options.Name) != 0 && name != options.Name {
+		log.Debugf("Didn't match name %s != %s", options.Name, name)
+		return nil
+	}
+	return ResourceKey{Kind: options.Kind, Name: name}
 }
 
 func (options ResourceListOptions) defaultPathRoot() string {
 	if len(options.Kind) == 0 {
-		panic("Kind must be specified in List option but is not")
+		log.Fatal("Kind must be specified in List option but is not")
 	}
 
 	k := "/calico/resources/v2/" + strings.ToLower(options.Kind)

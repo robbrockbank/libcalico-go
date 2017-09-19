@@ -40,7 +40,7 @@ type networkPolicies struct {
 // Create takes the representation of a NetworkPolicy and creates it.  Returns the stored
 // representation of the NetworkPolicy, and an error, if there is any.
 func (r networkPolicies) Create(res *apiv2.NetworkPolicy, opts options.SetOptions) (*apiv2.NetworkPolicy, error) {
-	out, err := r.client.untyped.Create(opts, apiv2.KindNetworkPolicy, r.namespace, res)
+	out, err := r.client.resources.Create(opts, apiv2.KindNetworkPolicy, r.namespace, res)
 	if out != nil {
 		return out.(*apiv2.NetworkPolicy), err
 	}
@@ -50,7 +50,7 @@ func (r networkPolicies) Create(res *apiv2.NetworkPolicy, opts options.SetOption
 // Update takes the representation of a NetworkPolicy and updates it. Returns the stored
 // representation of the NetworkPolicy, and an error, if there is any.
 func (r networkPolicies) Update(res *apiv2.NetworkPolicy, opts options.SetOptions) (*apiv2.NetworkPolicy, error) {
-	out, err := r.client.untyped.Update(opts, apiv2.KindNetworkPolicy, r.namespace, res)
+	out, err := r.client.resources.Update(opts, apiv2.KindNetworkPolicy, r.namespace, res)
 	if out != nil {
 		return out.(*apiv2.NetworkPolicy), err
 	}
@@ -59,14 +59,14 @@ func (r networkPolicies) Update(res *apiv2.NetworkPolicy, opts options.SetOption
 
 // Delete takes name of the NetworkPolicy and deletes it. Returns an error if one occurs.
 func (r networkPolicies) Delete(name string, opts options.DeleteOptions) error {
-	err := r.client.untyped.Delete(opts, apiv2.KindNetworkPolicy, r.namespace, name)
+	err := r.client.resources.Delete(opts, apiv2.KindNetworkPolicy, r.namespace, name)
 	return err
 }
 
 // Get takes name of the NetworkPolicy, and returns the corresponding NetworkPolicy object,
 // and an error if there is any.
 func (r networkPolicies) Get(name string, opts options.GetOptions) (*apiv2.NetworkPolicy, error) {
-	out, err := r.client.untyped.Get(opts, apiv2.KindNetworkPolicy, r.namespace, name)
+	out, err := r.client.resources.Get(opts, apiv2.KindNetworkPolicy, r.namespace, name)
 	if out != nil {
 		return out.(*apiv2.NetworkPolicy), err
 	}
@@ -76,7 +76,7 @@ func (r networkPolicies) Get(name string, opts options.GetOptions) (*apiv2.Netwo
 // List returns the list of NetworkPolicy objects that match the supplied options.
 func (r networkPolicies) List(opts options.ListOptions) (*apiv2.NetworkPolicyList, error) {
 	res := &apiv2.NetworkPolicyList{}
-	if err := r.client.untyped.List(opts, apiv2.KindNetworkPolicy, apiv2.KindNetworkPolicyList, r.namespace, AllNames, res); err != nil {
+	if err := r.client.resources.List(opts, apiv2.KindNetworkPolicy, apiv2.KindNetworkPolicyList, r.namespace, AllNames, res); err != nil {
 		return nil, err
 	}
 	return res, nil

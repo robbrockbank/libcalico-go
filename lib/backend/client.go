@@ -19,13 +19,13 @@ import (
 	"fmt"
 
 	"github.com/projectcalico/libcalico-go/lib/apiconfig"
-	"github.com/projectcalico/libcalico-go/lib/backend/api"
+	bapi "github.com/projectcalico/libcalico-go/lib/backend/api"
 	"github.com/projectcalico/libcalico-go/lib/backend/etcdv3"
 	log "github.com/sirupsen/logrus"
 )
 
 // NewClient creates a new backend datastore client.
-func NewClient(config apiconfig.CalicoAPIConfig) (c api.Client, err error) {
+func NewClient(config apiconfig.CalicoAPIConfig) (c bapi.Client, err error) {
 	log.Debugf("Using datastore type '%s'", config.Spec.DatastoreType)
 	switch config.Spec.DatastoreType {
 	//case apiconfig.EtcdV2:

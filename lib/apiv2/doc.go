@@ -1,4 +1,4 @@
-// Copyright (c) 2016 Tigera, Inc. All rights reserved.
+// Copyright (c) 2017 Tigera, Inc. All rights reserved.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -13,20 +13,19 @@
 // limitations under the License.
 
 /*
-Package api implements the struct definitions used on the northbound client API.
+Package apiv2 implements the resource definitions used on the Calico client API.
 
-In particular this includes:
-	-  The various resource types as exposed on the Northbound API.  The valid resource
-	   types are:
-		-  BGPPeer
-		-  HostEndpoint
-		-  Policy
-		-  Pool
-		-  Profile
-	-  The client configuration
+The valid resource types are:
+	-  BGPPeer
+	-  GlobalNetworkPolicy
+	-  HostEndpoint
+	-  IPPool
+	-  NetworkPolicy
+	-  Profile
+	-  WorkloadEndpoint
 
 The resource structures include the JSON tags for each exposed field.  These are standard
-go-lang tags that define the JSON format of the structures as used by calicoctl.  The YAML
+golang tags that define the JSON format of the structures as used by calicoctl.  The YAML
 format also used by calicoctl is directly mapped from the JSON.
 */
 package apiv2

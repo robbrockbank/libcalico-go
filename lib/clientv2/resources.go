@@ -20,11 +20,12 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/projectcalico/libcalico-go/lib/apiv2"
 	bapi "github.com/projectcalico/libcalico-go/lib/backend/api"
 	"github.com/projectcalico/libcalico-go/lib/backend/model"
-	"github.com/projectcalico/libcalico-go/lib/errors"
+	cerrors "github.com/projectcalico/libcalico-go/lib/errors"
 	"github.com/projectcalico/libcalico-go/lib/namespace"
 	"github.com/projectcalico/libcalico-go/lib/options"
 )
@@ -47,27 +48,28 @@ type resourceList interface {
 	v1.ListMetaAccessor
 }
 
-// untypedInterface has methods to work with resources.
-type untypedInterface interface {
+// resourceInterface has methods to work with generic resource types.
+type resourceInterface interface {
 	Create(opts options.SetOptions, kind, ns string, in resource) (resource, error)
 	Update(opts options.SetOptions, kind, ns string, in resource) (resource, error)
 	Delete(opts options.DeleteOptions, kind, ns, name string) error
 	Get(opts options.GetOptions, kind, ns, name string) (resource, error)
-	List(opts options.ListOptions, kind, ns, name string, inout resourceList) error
+	List(opts options.ListOptions, kind, listkind, ns, name string, inout resourceList) error
 	Watch(opts options.ListOptions, kind, ns, name string) (watch.Interface, error)
 }
 
-// untyped implements UntypedInterface
-type untyped struct {
+// resources implements resourceInterface.
+type resources struct {
 	backend bapi.Client
 }
 
 // Create creates a resource in the backend datastore.
-func (c *untyped) Create(opts options.SetOptions, kind, ns string, in resource) (resource, error) {
+func (c *resources) Create(opts options.SetOptions, kind, ns string, in resource) (resource, error) {
 	// A ResourceVersion should never be specified on a Create.
 	if len(in.GetObjectMeta().GetResourceVersion()) != 0 {
-		return nil, errors.ErrorValidation{
-			ErroredFields: []errors.ErroredField{{
+		logWithResource(in).Info("Rejecting Create request with non-empty resource version")
+		return nil, cerrors.ErrorValidation{
+			ErroredFields: []cerrors.ErroredField{{
 				Name:   "Metadata.ResourceVersion",
 				Reason: "ResourceVersion should not be set for a Create request",
 				Value:  in.GetObjectMeta().GetResourceVersion(),
@@ -90,11 +92,12 @@ func (c *untyped) Create(opts options.SetOptions, kind, ns string, in resource) 
 }
 
 // Update updates a resource in the backend datastore.
-func (c *untyped) Update(opts options.SetOptions, kind, ns string, in resource) (resource, error) {
+func (c *resources) Update(opts options.SetOptions, kind, ns string, in resource) (resource, error) {
 	// A ResourceVersion should always be specified on an Update.
 	if len(in.GetObjectMeta().GetResourceVersion()) == 0 {
-		return nil, errors.ErrorValidation{
-			ErroredFields: []errors.ErroredField{{
+		logWithResource(in).Info("Rejecting Update request with empty resource version")
+		return nil, cerrors.ErrorValidation{
+			ErroredFields: []cerrors.ErroredField{{
 				Name:   "Metadata.ResourceVersion",
 				Reason: "ResourceVersion must be set for an Update request",
 				Value:  in.GetObjectMeta().GetResourceVersion(),
@@ -117,7 +120,7 @@ func (c *untyped) Update(opts options.SetOptions, kind, ns string, in resource) 
 }
 
 // Delete deletes a resource from the backend datastore.
-func (c *untyped) Delete(opts options.DeleteOptions, kind, ns, name string) error {
+func (c *resources) Delete(opts options.DeleteOptions, kind, ns, name string) error {
 	// Create a ResourceKey and pass that to the backend datastore.
 	key := model.ResourceKey{
 		Kind:      kind,
@@ -128,7 +131,7 @@ func (c *untyped) Delete(opts options.DeleteOptions, kind, ns, name string) erro
 }
 
 // Get gets a resource from the backend datastore.
-func (c *untyped) Get(opts options.GetOptions, kind, ns, name string) (resource, error) {
+func (c *resources) Get(opts options.GetOptions, kind, ns, name string) (resource, error) {
 	key := model.ResourceKey{
 		Kind:      kind,
 		Name:      name,
@@ -143,7 +146,7 @@ func (c *untyped) Get(opts options.GetOptions, kind, ns, name string) (resource,
 }
 
 // List lists a resource from the backend datastore.
-func (c *untyped) List(opts options.ListOptions, kind, listKind, ns, name string, listObj resourceList) error {
+func (c *resources) List(opts options.ListOptions, kind, listKind, ns, name string, listObj resourceList) error {
 	key := model.ResourceListOptions{
 		Kind:      kind,
 		Name:      name,
@@ -178,14 +181,14 @@ func (c *untyped) List(opts options.ListOptions, kind, listKind, ns, name string
 }
 
 // Watch watches a specific resource or resource type.
-func (c *untyped) Watch(opts options.ListOptions, kind, ns, name string) (watch.Interface, error) {
+func (c *resources) Watch(opts options.ListOptions, kind, ns, name string) (watch.Interface, error) {
 	panic("Not implemented")
 	return nil, nil
 }
 
 // resourceToKVPair converts the resource to a KVPair that can be consumed by the
 // backend datastore client.
-func (c *untyped) resourceToKVPair(opts options.SetOptions, kind string, in resource) *model.KVPair {
+func (c *resources) resourceToKVPair(opts options.SetOptions, kind string, in resource) *model.KVPair {
 	// Prepare the resource to remove non-persisted fields.
 	rv := in.GetObjectMeta().GetResourceVersion()
 	in.GetObjectMeta().SetResourceVersion("")
@@ -214,7 +217,7 @@ func (c *untyped) resourceToKVPair(opts options.SetOptions, kind string, in reso
 
 // kvPairToResource converts a KVPair returned by the backend datastore client to a
 // resource.
-func (c *untyped) kvPairToResource(kvp *model.KVPair) resource {
+func (c *resources) kvPairToResource(kvp *model.KVPair) resource {
 	// Extract the resource from the returned value - the backend will already have
 	// decoded it.
 	out := kvp.Value.(resource)
@@ -230,14 +233,14 @@ func (c *untyped) kvPairToResource(kvp *model.KVPair) resource {
 // handleNamespace fills in the namespace information in the resource (if required),
 // and validates the namespace depending on whether or not a namespace should be
 // provided based on the resource kind.
-func (c *untyped) handleNamespace(ns, kind string, in resource) error {
+func (c *resources) handleNamespace(ns, kind string, in resource) error {
 	// If the namespace is not specified in the resource, assign it using the namespace supplied,
 	// otherwise validate that they match.
 	if in.GetObjectMeta().GetNamespace() == "" {
 		in.GetObjectMeta().SetNamespace(ns)
 	} else if in.GetObjectMeta().GetNamespace() != ns {
-		return errors.ErrorValidation{
-			ErroredFields: []errors.ErroredField{{
+		return cerrors.ErrorValidation{
+			ErroredFields: []cerrors.ErroredField{{
 				Name:   "Metadata.Namespace",
 				Reason: "Namespace does not match client namespace",
 				Value:  in.GetObjectMeta().GetNamespace(),
@@ -248,8 +251,8 @@ func (c *untyped) handleNamespace(ns, kind string, in resource) error {
 	// Validate that a namespace is supplied if one is required for the resource kind.
 	if namespace.IsNamespaced(kind) {
 		if in.GetObjectMeta().GetNamespace() == "" {
-			return errors.ErrorValidation{
-				ErroredFields: []errors.ErroredField{{
+			return cerrors.ErrorValidation{
+				ErroredFields: []cerrors.ErroredField{{
 					Name:   "Metadata.Namespace",
 					Reason: "Namespace should be specified",
 					Value:  in.GetObjectMeta().GetNamespace(),
@@ -257,8 +260,8 @@ func (c *untyped) handleNamespace(ns, kind string, in resource) error {
 			}
 		}
 	} else if in.GetObjectMeta().GetNamespace() != "" {
-		return errors.ErrorValidation{
-			ErroredFields: []errors.ErroredField{{
+		return cerrors.ErrorValidation{
+			ErroredFields: []cerrors.ErroredField{{
 				Name:   "Metadata.Namespace",
 				Reason: "Namespace should not be specified",
 				Value:  in.GetObjectMeta().GetNamespace(),
@@ -266,4 +269,13 @@ func (c *untyped) handleNamespace(ns, kind string, in resource) error {
 		}
 	}
 	return nil
+}
+
+func logWithResource(res resource) *log.Entry {
+	return log.WithFields(log.Fields{
+		"Kind": res.GetObjectKind().GroupVersionKind(),
+		"Name": res.GetObjectMeta().GetName(),
+		"Namespace": res.GetObjectMeta().GetNamespace(),
+		"ResourceVersion": res.GetObjectMeta().GetResourceVersion(),
+	})
 }

@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/coreos/etcd/client"
-	etcdv3 "github.com/coreos/etcd/clientv3"
+	"github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/mvcc/mvccpb"
 	"github.com/projectcalico/libcalico-go/lib/backend/api"
 	"github.com/projectcalico/libcalico-go/lib/backend/model"
@@ -49,7 +49,7 @@ const (
 	actionDeletion
 )
 
-func newSyncerV3(etcdClient *etcdv3.Client, callbacks api.SyncerCallbacks) *etcdSyncerV3 {
+func newSyncerV3(etcdClient *clientv3.Client, callbacks api.SyncerCallbacks) *etcdSyncerV3 {
 	return &etcdSyncerV3{
 		etcdClient: etcdClient,
 		callbacks:  callbacks,
@@ -107,7 +107,7 @@ func newSyncerV3(etcdClient *etcdv3.Client, callbacks api.SyncerCallbacks) *etcd
 // isn't worth it (and would be likely to be buggy due to lack of exercise).
 type etcdSyncerV3 struct {
 	callbacks  api.SyncerCallbacks
-	etcdClient *etcdv3.Client
+	etcdClient *clientv3.Client
 	OneShot    bool
 }
 
@@ -173,7 +173,7 @@ func (syn *etcdSyncerV3) readSnapshotsFromEtcd(
 				"requiredIdx": minRequiredSnapshotIndex,
 				"currentIdx":  highestCompletedSnapshotIndex,
 			}).Info("Newest snapshot is too stale, loading a new one")
-			resp, err := syn.etcdClient.Get(context.Background(), "/calico/v1", etcdv3.WithPrefix())
+			resp, err := syn.etcdClient.Get(context.Background(), "/calico/v1", clientv3.WithPrefix())
 			if err != nil {
 				if syn.OneShot {
 					// One-shot mode is used to grab a snapshot and then
@@ -211,7 +211,7 @@ func (syn *etcdSyncerV3) readSnapshotsFromEtcd(
 }
 
 // sendSnapshotResp sends the node and its children over the channel as events.
-func sendSnapshotResp(resp *etcdv3.GetResponse, snapshotUpdates chan<- interface{}) {
+func sendSnapshotResp(resp *clientv3.GetResponse, snapshotUpdates chan<- interface{}) {
 	for _, kv := range resp.Kvs {
 		snapshotUpdates <- snapshotUpdate{
 			snapshotIndex: int64(resp.Header.Revision),
@@ -254,7 +254,7 @@ func (syn *etcdSyncerV3) watchEtcd(watcherUpdateC chan<- interface{}) {
 		}
 
 	watchLoop: // We'll stay in this poll loop unless we drop out of sync.
-		watcher := syn.etcdClient.Watch(context.Background(), "/calico/v1", etcdv3.WithPrefix(), etcdv3.WithRev(int64(initialClusterIndex)))
+		watcher := syn.etcdClient.Watch(context.Background(), "/calico/v1", clientv3.WithPrefix(), clientv3.WithRev(int64(initialClusterIndex)))
 		for wresp := range watcher {
 			if err := wresp.Err(); err != nil {
 				log.WithError(err).Warn("Unexpected error type from etcd")

@@ -1,4 +1,4 @@
-// Copyright (c) 2016 Tigera, Inc. All rights reserved.
+// Copyright (c) 2017 Tigera, Inc. All rights reserved.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -31,7 +31,7 @@ import (
 	"github.com/projectcalico/libcalico-go/lib/options"
 )
 
-// client contains
+// client implements the client.Interface.
 type client struct {
 	// The backend client is currently public to allow access to datastore
 	// specific functions that are used by calico/node.  This is a temporary
@@ -39,8 +39,8 @@ type client struct {
 	// will be available in the future.
 	Backend bapi.Client
 
-	// The untyped client used internally
-	untyped untyped
+	// The resources client used internally.
+	resources resourceInterface
 }
 
 // New returns a connected client. The ClientConfig can either be created explicitly,
@@ -51,7 +51,7 @@ func New(config apiconfig.CalicoAPIConfig) (Interface, error) {
 	if cc.Backend, err = backend.NewClient(config); err != nil {
 		return nil, err
 	}
-	cc.untyped = untyped{backend: cc.Backend}
+	cc.resources = resources{backend: cc.Backend}
 	return cc, err
 }
 
