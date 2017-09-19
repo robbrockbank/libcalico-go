@@ -51,7 +51,7 @@ func New(config apiconfig.CalicoAPIConfig) (Interface, error) {
 	if cc.Backend, err = backend.NewClient(config); err != nil {
 		return nil, err
 	}
-	cc.resources = resources{backend: cc.Backend}
+	cc.resources = &resources{backend: cc.Backend}
 	return cc, err
 }
 
