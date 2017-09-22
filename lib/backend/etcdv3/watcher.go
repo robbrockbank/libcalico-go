@@ -86,11 +86,11 @@ func (wc *watcher) run() {
 		case <-wc.ctx.Done():
 		}
 	case <-watchClosedCh:
-		log.Debug("watcher.run() loop received watch closed event")
+		log.Debug("watcher.run loop received watch closed event")
 	case <-wc.ctx.Done(): // user cancel
-		log.Debug("watcher.run() loop received done event")
+		log.Debug("watcher.run loop received done event")
 	}
-	log.Info("watcher.run() loop exiting")
+	log.Info("watcher.run loop exiting")
 
 	// We use wc.ctx to reap all goroutines. Under whatever condition, we should stop them all.
 	// It's fine to double cancel.
@@ -98,7 +98,7 @@ func (wc *watcher) run() {
 	close(wc.resultChan)
 }
 
-// Stop() implements the api.WatchInterface.
+// Stop implements the api.WatchInterface.
 // This calls through to the context cancel function.
 func (wc *watcher) Stop() {
 	wc.cancel()
@@ -123,6 +123,9 @@ func (wc *watcher) listCurrent() error {
 		return err
 	}
 
+	// We are sending an initial sync of entries to the watcher to provide current
+	// state.  To the perspective of the watcher, these are added entries, so set the
+	// event type to WatchAdded.
 	for _, kv := range list.KVPairs {
 		log.Info("Sending create events for each existing entry")
 		wc.queueEvent(&api.WatchEvent{

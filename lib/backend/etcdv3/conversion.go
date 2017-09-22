@@ -46,11 +46,12 @@ func convertWatchEvent(e *clientv3.Event, l model.ListInterface) (*api.WatchEven
 	log.WithField("etcdv3-etcdKey", e.Kv.Key).Debug("Processing etcdv3 event")
 
 	var eventType api.WatchEventType
-	if e.Type == clientv3.EventTypeDelete {
+	switch {
+	case e.Type == clientv3.EventTypeDelete:
 		eventType = api.WatchDeleted
-	} else if e.IsCreate() {
+	case e.IsCreate():
 		eventType = api.WatchAdded
-	} else {
+	default:
 		eventType = api.WatchModified
 	}
 

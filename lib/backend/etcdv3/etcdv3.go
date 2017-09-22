@@ -320,13 +320,13 @@ func (c *etcdV3Client) Get(k model.Key, revision string) (*model.KVPair, error) 
 	}, nil
 }
 
-// List entries in the datastore.  This may return an empty listCurrent of there are
+// List entries in the datastore.  This may return an empty list of there are
 // no entries matching the request in the ListInterface.
 func (c *etcdV3Client) List(l model.ListInterface, revision string) (*model.KVPairList, error) {
-	logCxt := log.WithFields(log.Fields{"listCurrent-interface": l, "rev": revision})
+	logCxt := log.WithFields(log.Fields{"list-interface": l, "rev": revision})
 	logCxt.Debug("Processing List request")
 
-	// To listCurrent entries, we enumerate from the common root based on the supplied
+	// To list entries, we enumerate from the common root based on the supplied
 	// IDs, and then filter the results.
 	key := model.ListOptionsToDefaultPathRoot(l)
 

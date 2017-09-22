@@ -170,7 +170,7 @@ type WatchInterface interface {
 	ResultChan() <-chan WatchEvent
 }
 
-// EventType defines the possible types of events.
+// WatchEventType defines the possible types of events.
 type WatchEventType string
 
 const (
