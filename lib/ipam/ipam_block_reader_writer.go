@@ -1,4 +1,4 @@
-// Copyright (c) 2016 Tigera, Inc. All rights reserved.
+// Copyright (c) 2016-2017 Tigera, Inc. All rights reserved.
 
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,36 +12,37 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package client
+package ipam
 
 import (
-	goerrors "errors"
+	"context"
+	"errors"
+	"fmt"
 	"hash/fnv"
 	"math/big"
 	"math/rand"
 	"net"
-	"reflect"
 
-	"fmt"
-
-	"github.com/projectcalico/libcalico-go/lib/api"
-	"github.com/projectcalico/libcalico-go/lib/backend/model"
-	"github.com/projectcalico/libcalico-go/lib/errors"
-	cnet "github.com/projectcalico/libcalico-go/lib/net"
 	log "github.com/sirupsen/logrus"
+
+	bapi "github.com/projectcalico/libcalico-go/lib/backend/api"
+	"github.com/projectcalico/libcalico-go/lib/backend/model"
+	cerrors "github.com/projectcalico/libcalico-go/lib/errors"
+	cnet "github.com/projectcalico/libcalico-go/lib/net"
 )
 
 type blockReaderWriter struct {
-	client *Client
+	client bapi.Client
+	pools  PoolAccessorInterface
 }
 
 func (rw blockReaderWriter) getAffineBlocks(host string, ver ipVersion, pools []cnet.IPNet) ([]cnet.IPNet, error) {
 	// Lookup all blocks by providing an empty BlockListOptions
 	// to the List operation.
 	opts := model.BlockAffinityListOptions{Host: host, IPVersion: ver.Number}
-	datastoreObjs, err := rw.client.Backend.List(opts)
+	datastoreObjs, err := rw.client.List(context.Background(), opts, "")
 	if err != nil {
-		if _, ok := err.(errors.ErrorResourceDoesNotExist); ok {
+		if _, ok := err.(cerrors.ErrorResourceDoesNotExist); ok {
 			// The block path does not exist yet.  This is OK - it means
 			// there are no affine blocks.
 			return []cnet.IPNet{}, nil
@@ -54,7 +55,7 @@ func (rw blockReaderWriter) getAffineBlocks(host string, ver ipVersion, pools []
 
 	// Iterate through and extract the block CIDRs.
 	ids := []cnet.IPNet{}
-	for _, o := range datastoreObjs {
+	for _, o := range datastoreObjs.KVPairs {
 		k := o.Key.(model.BlockAffinityKey)
 
 		// Add the block if no IP pools were specified, or if IP pools were specified
@@ -75,41 +76,39 @@ func (rw blockReaderWriter) getAffineBlocks(host string, ver ipVersion, pools []
 
 func (rw blockReaderWriter) claimNewAffineBlock(host string, version ipVersion, requestedPools []cnet.IPNet, config IPAMConfig) (*cnet.IPNet, error) {
 
-	// If requestedPools is not empty, use it.  Otherwise, default to
-	// all configured pools.
+	// If requestedPools is not empty, use it.  Otherwise, default to all configured pools.
 	pools := []cnet.IPNet{}
 
 	// Get all the configured pools.
-	allPools, err := rw.client.IPPools().List(api.IPPoolMetadata{})
+	allPools, err := rw.pools.GetEnabledPools(version.Number)
 	if err != nil {
 		log.Errorf("Error reading configured pools: %s", err)
 		return nil, err
 	}
 
-	for _, p := range allPools.Items {
-		// Only include pools that are not disabled and are the correct version.
-		if !p.Spec.Disabled && version.Number == p.Metadata.CIDR.Version() && isPoolInRequestedPools(p.Metadata.CIDR, requestedPools) {
-			pools = append(pools, p.Metadata.CIDR)
+	for _, p := range allPools {
+		if isPoolInRequestedPools(p, requestedPools) {
+			pools = append(pools, p)
 		}
 	}
 
 	// Build a map so we can lookup existing pools.
 	pm := map[string]bool{}
-	for _, ap := range allPools.Items {
-		pm[ap.Metadata.CIDR.String()] = true
+	for _, p := range allPools {
+		pm[p.String()] = true
 	}
 
 	// Make sure each requested pool exists.
 	for _, rp := range requestedPools {
 		if _, ok := pm[rp.String()]; !ok {
 			// The requested pool doesn't exist.
-			return nil, fmt.Errorf("The given pool (%s) does not exist", rp.IPNet.String())
+			return nil, fmt.Errorf("The given pool (%s) does not exist, or is not enabled", rp.IPNet.String())
 		}
 	}
 
 	// If there are no pools, we cannot assign addresses.
 	if len(pools) == 0 {
-		return nil, goerrors.New("No configured Calico pools")
+		return nil, errors.New("No configured Calico pools")
 	}
 
 	// Iterate through pools to find a new block.
@@ -122,9 +121,9 @@ func (rw blockReaderWriter) claimNewAffineBlock(host string, version ipVersion, 
 			// Check if a block already exists for this subnet.
 			log.Debugf("Getting block: %s", subnet.String())
 			key := model.BlockKey{CIDR: *subnet}
-			_, err := rw.client.Backend.Get(key)
+			_, err := rw.client.Get(context.Background(), key, "")
 			if err != nil {
-				if _, ok := err.(errors.ErrorResourceDoesNotExist); ok {
+				if _, ok := err.(cerrors.ErrorResourceDoesNotExist); ok {
 					// The block does not yet exist in etcd.  Try to grab it.
 					log.Debugf("Found free block: %+v", *subnet)
 					err = rw.claimBlockAffinity(*subnet, host, config)
@@ -145,8 +144,10 @@ func isPoolInRequestedPools(pool cnet.IPNet, requestedPools []cnet.IPNet) bool {
 	if len(requestedPools) == 0 {
 		return true
 	}
+	// Compare the requested pools against the actual pool CIDR.  Note that we don't use deep equals
+	// because golang interchangeably seems to use 4-byte and 16-byte representations of IPv4 addresses.
 	for _, cidr := range requestedPools {
-		if reflect.DeepEqual(pool, cidr) {
+		if pool.String() == cidr.String() {
 			return true
 		}
 	}
@@ -161,7 +162,7 @@ func (rw blockReaderWriter) claimBlockAffinity(subnet cnet.IPNet, host string, c
 		Key:   model.BlockAffinityKey{Host: host, CIDR: subnet},
 		Value: model.BlockAffinityValue,
 	}
-	_, err := rw.client.Backend.Create(&obj)
+	_, err := rw.client.Create(context.Background(), &obj)
 
 	// Create the new block.
 	block := newBlock(subnet)
@@ -169,7 +170,7 @@ func (rw blockReaderWriter) claimBlockAffinity(subnet cnet.IPNet, host string, c
 	// Make sure hostname is not empty.
 	if host == "" {
 		log.Errorf("Hostname can't be empty")
-		return goerrors.New("Hostname must be sepcified to claim block affinity")
+		return errors.New("Hostname must be sepcified to claim block affinity")
 	}
 	affinityKeyStr := "host:" + host
 	block.Affinity = &affinityKeyStr
@@ -180,12 +181,12 @@ func (rw blockReaderWriter) claimBlockAffinity(subnet cnet.IPNet, host string, c
 		Key:   model.BlockKey{block.CIDR},
 		Value: block.AllocationBlock,
 	}
-	_, err = rw.client.Backend.Create(&o)
+	_, err = rw.client.Create(context.Background(), &o)
 	if err != nil {
-		if _, ok := err.(errors.ErrorResourceAlreadyExists); ok {
+		if _, ok := err.(cerrors.ErrorResourceAlreadyExists); ok {
 			// Block already exists, check affinity.
-			log.Warningf("Problem claiming block affinity:", err)
-			obj, err := rw.client.Backend.Get(model.BlockKey{subnet})
+			log.WithError(err).Warningf("Problem claiming block affinity")
+			obj, err := rw.client.Get(context.Background(), model.BlockKey{subnet}, "")
 			if err != nil {
 				log.Errorf("Error reading block:", err)
 				return err
@@ -202,9 +203,7 @@ func (rw blockReaderWriter) claimBlockAffinity(subnet cnet.IPNet, host string, c
 			}
 
 			// Some other host beat us to this block.  Cleanup and return error.
-			err = rw.client.Backend.Delete(&model.KVPair{
-				Key: model.BlockAffinityKey{Host: host, CIDR: b.CIDR},
-			})
+			err = rw.client.Delete(context.Background(), model.BlockAffinityKey{Host: host, CIDR: b.CIDR}, "")
 			if err != nil {
 				log.Errorf("Error cleaning up block affinity: %s", err)
 				return err
@@ -222,7 +221,7 @@ func (rw blockReaderWriter) releaseBlockAffinity(host string, blockCIDR cnet.IPN
 		// Read the model.KVPair containing the block
 		// and pull out the allocationBlock object.  We need to hold on to this
 		// so that we can pass it back to the datastore on Update.
-		obj, err := rw.client.Backend.Get(model.BlockKey{CIDR: blockCIDR})
+		obj, err := rw.client.Get(context.Background(), model.BlockKey{CIDR: blockCIDR}, "")
 		if err != nil {
 			log.Errorf("Error getting block %s: %s", blockCIDR.String(), err)
 			return err
@@ -232,7 +231,7 @@ func (rw blockReaderWriter) releaseBlockAffinity(host string, blockCIDR cnet.IPN
 		// Make sure hostname is not empty.
 		if host == "" {
 			log.Errorf("Hostname can't be empty")
-			return goerrors.New("Hostname must be sepcified to release block affinity")
+			return errors.New("Hostname must be sepcified to release block affinity")
 		}
 
 		// Check that the block affinity matches the given affinity.
@@ -243,12 +242,10 @@ func (rw blockReaderWriter) releaseBlockAffinity(host string, blockCIDR cnet.IPN
 
 		if b.empty() {
 			// If the block is empty, we can delete it.
-			err := rw.client.Backend.Delete(&model.KVPair{
-				Key: model.BlockKey{CIDR: b.CIDR},
-			})
+			err := rw.client.Delete(context.Background(), model.BlockKey{CIDR: b.CIDR}, "")
 			if err != nil {
 				// Return the error unless the block didn't exist.
-				if _, ok := err.(errors.ErrorResourceDoesNotExist); !ok {
+				if _, ok := err.(cerrors.ErrorResourceDoesNotExist); !ok {
 					log.Errorf("Error deleting block: %s", err)
 					return err
 				}
@@ -263,9 +260,9 @@ func (rw blockReaderWriter) releaseBlockAffinity(host string, blockCIDR cnet.IPN
 			// Pass back the original KVPair with the new
 			// block information so we can do a CAS.
 			obj.Value = b.AllocationBlock
-			_, err = rw.client.Backend.Update(obj)
+			_, err = rw.client.Update(context.Background(), obj)
 			if err != nil {
-				if _, ok := err.(errors.ErrorResourceUpdateConflict); ok {
+				if _, ok := err.(cerrors.ErrorResourceUpdateConflict); ok {
 					// CASError - continue.
 					continue
 				} else {
@@ -276,12 +273,10 @@ func (rw blockReaderWriter) releaseBlockAffinity(host string, blockCIDR cnet.IPN
 
 		// We've removed / updated the block, so update the host config
 		// to remove the CIDR.
-		err = rw.client.Backend.Delete(&model.KVPair{
-			Key: model.BlockAffinityKey{Host: host, CIDR: b.CIDR},
-		})
+		err = rw.client.Delete(context.Background(), model.BlockAffinityKey{Host: host, CIDR: b.CIDR}, "")
 		if err != nil {
 			// Return the error unless the affinity didn't exist.
-			if _, ok := err.(errors.ErrorResourceDoesNotExist); !ok {
+			if _, ok := err.(cerrors.ErrorResourceDoesNotExist); !ok {
 				log.Errorf("Error deleting block affinity: %s", err)
 				return err
 			}
@@ -289,16 +284,16 @@ func (rw blockReaderWriter) releaseBlockAffinity(host string, blockCIDR cnet.IPN
 		return nil
 
 	}
-	return goerrors.New("Max retries hit")
+	return errors.New("Max retries hit")
 }
 
 // withinConfiguredPools returns true if the given IP is within a configured
 // Calico pool, and false otherwise.
 func (rw blockReaderWriter) withinConfiguredPools(ip cnet.IP) bool {
-	allPools, _ := rw.client.IPPools().List(api.IPPoolMetadata{})
-	for _, p := range allPools.Items {
+	allPools, _ := rw.pools.GetEnabledPools(ip.Version())
+	for _, p := range allPools {
 		// Compare any enabled pools.
-		if !p.Spec.Disabled && p.Metadata.CIDR.Contains(ip.IP) {
+		if p.Contains(ip.IP) {
 			return true
 		}
 	}
