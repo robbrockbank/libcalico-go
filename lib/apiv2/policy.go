@@ -140,10 +140,6 @@ type ICMPFields struct {
 // A source EntityRule matches the source endpoint and originating traffic.
 // A destination EntityRule matches the destination endpoint and terminating traffic.
 type EntityRule struct {
-	// Tag is an optional field that restricts the rule to only apply to traffic that
-	// originates from (or terminates at) endpoints that have profiles with the given tag
-	// in them.
-	Tag string `json:"tag,omitempty" validate:"omitempty,tag"`
 	// Nets is an optional field that restricts the rule to only apply to traffic that
 	// originates from (or terminates at) IP addresses in any of the given subnets.
 	Nets []string `json:"nets,omitempty" validate:"omitempty,dive,cidr"`
@@ -171,8 +167,6 @@ type EntityRule struct {
 	// Since only some protocols have ports, if any ports are specified it requires the
 	// Protocol match in the Rule to be set to "tcp" or "udp".
 	Ports []numorstring.Port `json:"ports,omitempty" validate:"omitempty,dive"`
-	// NotTag is the negated version of the Tag field.
-	NotTag string `json:"notTag,omitempty" validate:"omitempty,tag"`
 	// NotNets is an optional field that restricts the rule to only apply to traffic that
 	// does not originate from (or terminate at) an IP address in any of the given subnets.
 	NotNets []string `json:"notNets,omitempty" validate:"omitempty,dive,cidr"`
@@ -188,8 +182,8 @@ type EntityRule struct {
 type Action string
 
 const (
-	Allow Action = "Allow"
-	Deny         = "Deny"
-	Log          = "Log"
-	Pass         = "Pass"
+	ActionAllow Action = "Allow"
+	ActionDeny         = "Deny"
+	ActionLog          = "Log"
+	ActionPass         = "Pass"
 )

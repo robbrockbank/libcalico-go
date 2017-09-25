@@ -15,10 +15,10 @@
 package validator_test
 
 import (
-	"github.com/projectcalico/libcalico-go/lib/validator"
-
 	. "github.com/onsi/ginkgo"
 	. "github.com/onsi/gomega"
+
+	"github.com/projectcalico/libcalico-go/lib/validator"
 	"github.com/projectcalico/libcalico-go/lib/api"
 	"github.com/projectcalico/libcalico-go/lib/net"
 	"github.com/projectcalico/libcalico-go/lib/scope"

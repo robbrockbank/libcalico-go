@@ -75,9 +75,10 @@ type ErrorValidation struct {
 }
 
 type ErroredField struct {
-	Name   string
-	Value  interface{}
-	Reason string
+	Name       string
+	StructName string
+	Value      interface{}
+	Reason     string
 }
 
 func (e ErrorValidation) Error() string {

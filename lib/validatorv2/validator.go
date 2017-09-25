@@ -23,28 +23,51 @@ import (
 	log "github.com/sirupsen/logrus"
 	"gopkg.in/go-playground/validator.v9"
 
-	"github.com/projectcalico/libcalico-go/lib/api"
-	"github.com/projectcalico/libcalico-go/lib/errors"
+	cerrors "github.com/projectcalico/libcalico-go/lib/errors"
 	cnet "github.com/projectcalico/libcalico-go/lib/net"
 	"github.com/projectcalico/libcalico-go/lib/numorstring"
-	"github.com/projectcalico/libcalico-go/lib/scope"
 	"github.com/projectcalico/libcalico-go/lib/selector"
 	"github.com/projectcalico/libcalico-go/lib/selector/tokenizer"
 	"github.com/projectcalico/libcalico-go/lib/backend/model"
+	"github.com/projectcalico/libcalico-go/lib/apiv2"
 )
 
 var validate *validator.Validate
 
 var (
-	labelRegex          = regexp.MustCompile(`^` + tokenizer.LabelKeyMatcher + `$`)
-	labelValueRegex     = regexp.MustCompile("^[a-zA-Z0-9]?([a-zA-Z0-9_.-]{0,61}[a-zA-Z0-9])?$")
-	nameRegex           = regexp.MustCompile("^[a-zA-Z0-9_.-]{1,128}$")
-	namespacedNameRegex = regexp.MustCompile(`^[a-zA-Z0-9_./-]{1,128}$`)
-	interfaceRegex      = regexp.MustCompile("^[a-zA-Z0-9_-]{1,15}$")
-	actionRegex         = regexp.MustCompile("^(allow|deny|log|pass)$")
-	backendActionRegex  = regexp.MustCompile("^(allow|deny|log|next-tier|)$")
-	protocolRegex       = regexp.MustCompile("^(tcp|udp|icmp|icmpv6|sctp|udplite)$")
-	ipipModeRegex       = regexp.MustCompile("^(always|cross-subnet|)$")
+	ipipModeValues = []string{
+		string(apiv2.IPIPModeOff),
+		string(apiv2.IPIPModeAlways),
+		string(apiv2.IPIPModeCrossSubnet),
+    }
+	actionValues = []string{
+		string(apiv2.ActionAllow),
+		string(apiv2.ActionDeny),
+		string(apiv2.ActionLog),
+		string(apiv2.ActionPass),
+	}
+	policyValues = []string{
+		string(apiv2.PolicyTypeIngress),
+		string(apiv2.PolicyTypeEgress),
+	}
+	backendActionValues = []string{
+		"allow",
+		"deny",
+		"log",
+		"next-tier",
+	}
+	protocolValues = []string {
+		"TCP",
+		"UDP",
+		"ICMP",
+		"ICMPv6",
+		"SCTP",
+		"UDPLite",
+	}
+	labelRegex          = `^` + tokenizer.LabelKeyMatcher + `$`
+	labelValueRegex     = "^[a-zA-Z0-9]?([a-zA-Z0-9_.-]{0,61}[a-zA-Z0-9])?$"
+	portNameRegex       = "^[a-zA-Z0-9_.-]{1,128}$"
+	interfaceRegex      = "^[a-zA-Z0-9_-]{1,15}$"
 	reasonString        = "Reason: "
 	poolSmallIPv4       = "IP pool size is too small (min /26) for use with Calico IPAM"
 	poolSmallIPv6       = "IP pool size is too small (min /122) for use with Calico IPAM"
@@ -71,10 +94,10 @@ func Validate(current interface{}) error {
 		return nil
 	}
 
-	verr := errors.ErrorValidation{}
+	verr := cerrors.ErrorValidation{}
 	for _, f := range err.(validator.ValidationErrors) {
 		verr.ErroredFields = append(verr.ErroredFields,
-			errors.ErroredField{
+			cerrors.ErroredField{
 				Name:   f.Field(),
 				StructName: f.StructField(),
 				Value:  f.Value(),
@@ -89,18 +112,15 @@ func init() {
 	validate = validator.New()
 
 	// Register field validators.
-	registerFieldValidator("action", validateAction)
-	registerFieldValidator("interface", validateInterface)
-	registerFieldValidator("backendaction", validateBackendAction)
-	registerFieldValidator("name", validateName)
-	registerFieldValidator("namespacedname", validateNamespacedName)
+	registerFieldValidator("action", oneOfValidator(actionValues))
+	registerFieldValidator("interface", regexValidator(interfaceRegex))
+	registerFieldValidator("backendaction", oneOfValidator(backendActionValues))
+	registerFieldValidator("portname", regexValidator(portNameRegex))
 	registerFieldValidator("selector", validateSelector)
-	registerFieldValidator("tag", validateTag)
 	registerFieldValidator("labels", validateLabels)
-	registerFieldValidator("scopeglobalornode", validateScopeGlobalOrNode)
 	registerFieldValidator("ipversion", validateIPVersion)
-	registerFieldValidator("ipipmode", validateIPIPMode)
-	registerFieldValidator("policytype", validatePolicyType)
+	registerFieldValidator("ipipmode", oneOfValidator(ipipModeValues))
+	registerFieldValidator("policytype", oneOfValidator(policyValues))
 
 	// Register struct validators.
 	// Shared types.
@@ -108,16 +128,15 @@ func init() {
 	registerStructValidator(validatePort, numorstring.Port{})
 
 	// Frontend API types.
-	registerStructValidator(validateIPNAT, api.IPNAT{})
-	registerStructValidator(validateWorkloadEndpointSpec, api.WorkloadEndpointSpec{})
-	registerStructValidator(validateHostEndpointSpec, api.HostEndpointSpec{})
-	registerStructValidator(validateIPPool, api.IPPool{})
-	registerStructValidator(validateICMPFields, api.ICMPFields{})
-	registerStructValidator(validateRule, api.Rule{})
-	registerStructValidator(validateEndpointPort, api.EndpointPort{})
-	registerStructValidator(validateNodeSpec, api.NodeSpec{})
-	registerStructValidator(validateBGPPeerMeta, api.BGPPeerMetadata{})
-	registerStructValidator(validatePolicySpec, api.PolicySpec{})
+	registerStructValidator(validateIPNAT, apiv2.IPNAT{})
+	registerStructValidator(validateWorkloadEndpointSpec, apiv2.WorkloadEndpointSpec{})
+	registerStructValidator(validateHostEndpointSpec, apiv2.HostEndpointSpec{})
+	registerStructValidator(validateIPPool, apiv2.IPPool{})
+	registerStructValidator(validateICMPFields, apiv2.ICMPFields{})
+	registerStructValidator(validateRule, apiv2.Rule{})
+	registerStructValidator(validateEndpointPort, apiv2.EndpointPort{})
+	registerStructValidator(validateNodeSpec, apiv2.NodeSpec{})
+	registerStructValidator(validatePolicySpec, apiv2.PolicySpec{})
 
 	// Backend model types.
 	registerStructValidator(validateBackendRule, model.Rule{})
@@ -150,46 +169,24 @@ func registerStructValidator(fn validator.StructLevelFunc, t ...interface{}) {
 	validate.RegisterStructValidation(fn, t...)
 }
 
-func validateAction(fl validator.FieldLevel) bool {
-	s := fl.Field().String()
-	log.Debugf("Validate action: %s", s)
-	return actionRegex.MatchString(s)
+func oneOfValidator(values []string) validator.Func {
+	reg := "^("+strings.Join(values, "|")+")$"
+	return regexValidator(reg)
 }
 
-func validateInterface(fl validator.FieldLevel) bool {
-	s := fl.Field().String()
-	log.Debugf("Validate interface: %s", s)
-	return interfaceRegex.MatchString(s)
-}
-
-func validateBackendAction(fl validator.FieldLevel) bool {
-	s := fl.Field().String()
-	log.Debugf("Validate action: %s", s)
-	return backendActionRegex.MatchString(s)
-}
-
-func validateName(fl validator.FieldLevel) bool {
-	s := fl.Field().String()
-	log.Debugf("Validate name: %s", s)
-	return nameRegex.MatchString(s)
-}
-
-func validateNamespacedName(fl validator.FieldLevel) bool {
-	s := fl.Field().String()
-	log.Debugf("Validate namespacedname: %s", s)
-	return namespacedNameRegex.MatchString(s)
+func regexValidator(regex string) validator.Func {
+	r := regexp.MustCompile(regex)
+	return func(fl validator.FieldLevel) bool {
+		s := fl.Field().String()
+		log.Debugf("Validate %s: %s", fl.FieldName(), s)
+		return r.MatchString(s)
+	}
 }
 
 func validateIPVersion(fl validator.FieldLevel) bool {
 	ver := fl.Field().Int()
 	log.Debugf("Validate ip version: %d", ver)
 	return ver == 4 || ver == 6
-}
-
-func validateIPIPMode(fl validator.FieldLevel) bool {
-	s := fl.Field().String()
-	log.Debugf("Validate name: %s", s)
-	return ipipModeRegex.MatchString(s)
 }
 
 func validateSelector(fl validator.FieldLevel) bool {
@@ -205,13 +202,8 @@ func validateSelector(fl validator.FieldLevel) bool {
 	return true
 }
 
-func validateTag(fl validator.FieldLevel) bool {
-	s := fl.Field().String()
-	log.Debugf("Validate tag: %s", s)
-	return nameRegex.MatchString(s)
-}
-
 func validateLabels(fl validator.FieldLevel) bool {
+	//TODO Use Kubernetes function for this
 	l := fl.Field().Interface().(map[string]string)
 	log.Debugf("Validate labels: %s", l)
 	for k, v := range l {
@@ -220,24 +212,6 @@ func validateLabels(fl validator.FieldLevel) bool {
 		}
 	}
 	return true
-}
-
-func validateScopeGlobalOrNode(fl validator.FieldLevel) bool {
-	s := fl.Field().Interface().(scope.Scope)
-	log.Debugf("Validate scope: %v", s)
-	return s == scope.Global || s == scope.Node
-}
-
-func validatePolicyType(fl validator.FieldLevel) bool {
-	s := fl.Field().String()
-	log.Debugf("Validate policy type: %s", s)
-	if s == string(api.PolicyTypeIngress) {
-		return true
-	}
-	if s == string(api.PolicyTypeEgress) {
-		return true
-	}
-	return false
 }
 
 func validateProtocol(sl validator.StructLevel) {
@@ -265,51 +239,60 @@ func validatePort(sl validator.StructLevel) {
 	log.Debugf("Validate port: %s")
 	if p.MinPort > p.MaxPort {
 		sl.ReportError(reflect.ValueOf(p.MaxPort),
-			"Port", "", reason("port range invalid"), "")
+			"Port", "port", reason("port range invalid"), "")
 	}
 
 	if p.PortName != "" {
 		if p.MinPort != 0 || p.MaxPort != 0 {
 			sl.ReportError(reflect.ValueOf(p.PortName),
-				"Port", "", reason("named port invalid, if name is specified, min and max should be 0"), "")
+				"Port", "port", reason("named port invalid, if name is specified, min and max should be 0"), "")
 		}
 	} else if p.MinPort < 1 || p.MaxPort < 1 {
 		sl.ReportError(reflect.ValueOf(p.MaxPort),
-			"Port", "", reason("port range invalid, port number must be between 0 and 65536"), "")
+			"Port", "port", reason("port range invalid, port number must be between 0 and 65536"), "")
 	}
 }
 
 func validateIPNAT(sl validator.StructLevel) {
-	i := sl.Current().Interface().(api.IPNAT)
+	i := sl.Current().Interface().(apiv2.IPNAT)
 	log.Debugf("Internal IP: %s; External IP: %s", i.InternalIP, i.ExternalIP)
 
+	ip1 := cnet.MustParseIP(i.InternalIP)
+	ip2 := cnet.MustParseIP(i.ExternalIP)
 	// An IPNAT must have both the internal and external IP versions the same.
-	if i.InternalIP.Version() != i.ExternalIP.Version() {
+	if ip1.Version() != ip2.Version() {
 		sl.ReportError(reflect.ValueOf(i.ExternalIP),
-			"ExternalIP", "", reason("mismatched IP versions"), "")
+			"ExternalIP", "externalIP", reason("mismatched IP versions"), "")
 	}
 }
 
 func validateWorkloadEndpointSpec(sl validator.StructLevel) {
-	w := sl.Current().Interface().(api.WorkloadEndpointSpec)
+	w := sl.Current().Interface().(apiv2.WorkloadEndpointSpec)
 
 	// The configured networks only support /32 (for IPv4) and /128 (for IPv6) at present.
-	for _, netw := range w.IPNetworks {
+	for _, n := range w.IPNetworks {
+		netw := cnet.MustParseNetwork(n)
 		ones, bits := netw.Mask.Size()
 		if bits != ones {
 			sl.ReportError(reflect.ValueOf(w.IPNetworks),
-				"IPNetworks", "", reason("IP network contains multiple addresses"), "")
+				"IPNetworks", "ipNetworks", reason("IP network contains multiple addresses"), "")
 		}
 	}
 
-	if w.IPv4Gateway != nil && w.IPv4Gateway.Version() != 4 {
-		sl.ReportError(reflect.ValueOf(w.IPv4Gateway),
-			"IPv4Gateway", "", reason("invalid IPv4 gateway address specified"), "")
+	if len(w.IPv4Gateway) != 0 {
+		ip := cnet.MustParseIP(w.IPv4Gateway)
+		if ip.Version() != 4 {
+			sl.ReportError(reflect.ValueOf(w.IPv4Gateway),
+				"IPv4Gateway", "ipv4Gateway", reason("invalid IPv4 gateway address specified"), "")
+		}
 	}
 
-	if w.IPv6Gateway != nil && w.IPv6Gateway.Version() != 6 {
-		sl.ReportError(reflect.ValueOf(w.IPv6Gateway),
-			"IPv6Gateway", "", reason("invalid IPv6 gateway address specified"), "")
+	if len(w.IPv6Gateway) != 0 {
+		ip := cnet.MustParseIP(w.IPv6Gateway)
+		if ip.Version() != 6 {
+			sl.ReportError(reflect.ValueOf(w.IPv6Gateway),
+				"IPv6Gateway", "ipv6Gateway", reason("invalid IPv6 gateway address specified"), "")
+		}
 	}
 
 	// If NATs have been specified, then they should each be within the configured networks of
@@ -319,9 +302,11 @@ func validateWorkloadEndpointSpec(sl validator.StructLevel) {
 		for _, nat := range w.IPNATs {
 			// Check each NAT to ensure it is within the configured networks.  If any
 			// are not then exit without further checks.
+			inat := cnet.MustParseIP(nat.InternalIP)
 			valid = false
-			for _, nw := range w.IPNetworks {
-				if nw.Contains(nat.InternalIP.IP) {
+			for _, n := range w.IPNetworks {
+				netw := cnet.MustParseNetwork(n)
+				if netw.Contains(inat.IP) {
 					valid = true
 					break
 				}
@@ -333,7 +318,7 @@ func validateWorkloadEndpointSpec(sl validator.StructLevel) {
 
 		if !valid {
 			sl.ReportError(reflect.ValueOf(w.IPNATs),
-				"IPNATs", "", reason("NAT is not in the endpoint networks"), "")
+				"IPNATs", "ipNATs", reason("NAT is not in the endpoint networks"), "")
 		}
 	}
 
@@ -354,12 +339,12 @@ func validateWorkloadEndpointSpec(sl validator.StructLevel) {
 }
 
 func validateHostEndpointSpec(sl validator.StructLevel) {
-	h := sl.Current().Interface().(api.HostEndpointSpec)
+	h := sl.Current().Interface().(apiv2.HostEndpointSpec)
 
 	// A host endpoint must have an interface name and/or some expected IPs specified.
 	if h.InterfaceName == "" && len(h.ExpectedIPs) == 0 {
 		sl.ReportError(reflect.ValueOf(h.InterfaceName),
-			"InterfaceName", "", reason("no interface or expected IPs have been specified"), "")
+			"InterfaceName", "interfaceName", reason("no interface or expected IPs have been specified"), "")
 	}
 
 	// Check for duplicate named ports.
@@ -379,68 +364,62 @@ func validateHostEndpointSpec(sl validator.StructLevel) {
 }
 
 func validateIPPool(sl validator.StructLevel) {
-	pool := sl.Current().Interface().(api.IPPool)
+	pool := sl.Current().Interface().(apiv2.IPPool)
 
-	// Validation of the data occurs before checking whether Metadata
-	// fields are complete, so need to check whether CIDR is assigned before
-	// performing cross-checks.  If CIDR is not assigned this will be
-	// picked up during Metadata->Key conversion.
-	if pool.Metadata.CIDR.IP != nil {
-		// IPIP cannot be enabled for IPv6.
-		if pool.Metadata.CIDR.Version() == 6 && pool.Spec.IPIP != nil && pool.Spec.IPIP.Enabled {
-			sl.ReportError(reflect.ValueOf(pool.Spec.IPIP.Enabled),
-				"IPIP.Enabled", "", reason("IPIP is not supported on an IPv6 IP pool"), "")
-		}
+	// The Calico CIDR should be strictly masked
+	ip, ipNet, _ := cnet.ParseCIDR(pool.Spec.CIDR)
+	log.Debugf("Pool CIDR: %s, Masked IP: %d", pool.Spec.CIDR, ipNet.IP)
+	if ipNet.IP.String() != ip.String() {
+		sl.ReportError(reflect.ValueOf(pool.Spec.CIDR),
+			"CIDR", "cidr", reason(poolUnstictCIDR), "")
+	}
 
-		// The Calico IPAM places restrictions on the minimum IP pool size.  If
-		// the pool is enabled, check that the pool is at least the minimum size.
-		if !pool.Spec.Disabled {
-			ones, bits := pool.Metadata.CIDR.Mask.Size()
-			log.Debugf("Pool CIDR: %s, num bits: %d", pool.Metadata.CIDR, bits-ones)
-			if bits-ones < 6 {
-				if pool.Metadata.CIDR.Version() == 4 {
-					sl.ReportError(reflect.ValueOf(pool.Metadata.CIDR),
-						"CIDR", "", reason(poolSmallIPv4), "")
-				} else {
-					sl.ReportError(reflect.ValueOf(pool.Metadata.CIDR),
-						"CIDR", "", reason(poolSmallIPv6), "")
-				}
+	// IPIP cannot be enabled for IPv6.
+	if ipNet.Version() == 6 && pool.Spec.IPIP != nil && pool.Spec.IPIP.Mode != apiv2.IPIPModeOff {
+		sl.ReportError(reflect.ValueOf(pool.Spec.IPIP.Mode),
+			"IPIP.Mode", "IPIP.mode", reason("IPIP is not supported on an IPv6 IP pool"), "")
+	}
+
+	// The Calico IPAM places restrictions on the minimum IP pool size.  If
+	// the pool is enabled, check that the pool is at least the minimum size.
+	if !pool.Spec.Disabled {
+		ones, bits := ipNet.Mask.Size()
+		log.Debugf("Pool CIDR: %s, num bits: %d", pool.Spec.CIDR, bits-ones)
+		if bits-ones < 6 {
+			if ipNet.Version() == 4 {
+				sl.ReportError(reflect.ValueOf(pool.Spec.CIDR),
+					"CIDR", "cidr", reason(poolSmallIPv4), "")
+			} else {
+				sl.ReportError(reflect.ValueOf(pool.Spec.CIDR),
+					"CIDR", "cidr", reason(poolSmallIPv6), "")
 			}
 		}
+	}
 
-		// The Calico CIDR should be strictly masked
-		ip, ipNet, _ := net.ParseCIDR(pool.Metadata.CIDR.String())
-		log.Debugf("Pool CIDR: %s, Masked IP: %d", pool.Metadata.CIDR, ipNet.IP)
-		if ipNet.IP.String() != ip.String() {
-			sl.ReportError(reflect.ValueOf(pool.Metadata.CIDR),
-				"CIDR", "", reason(poolUnstictCIDR), "")
-		}
+	// IP Pool CIDR cannot overlap with IPv4 or IPv6 link local address range.
+	if ipNet.Version() == 4 && ipNet.IsNetOverlap(ipv4LinkLocalNet) {
+		sl.ReportError(reflect.ValueOf(pool.Spec.CIDR),
+			"CIDR", "cidr", reason(overlapsV4LinkLocal), "")
+	}
 
-		// IP Pool CIDR cannot overlap with IPv4 or IPv6 link local address range.
-		if pool.Metadata.CIDR.Version() == 4 && pool.Metadata.CIDR.IsNetOverlap(ipv4LinkLocalNet) {
-			sl.ReportError(reflect.ValueOf(pool.Metadata.CIDR),
-				"CIDR", "", reason(overlapsV4LinkLocal), "")
-		}
-
-		if pool.Metadata.CIDR.Version() == 6 && pool.Metadata.CIDR.IsNetOverlap(ipv6LinkLocalNet) {
-			sl.ReportError(reflect.ValueOf(pool.Metadata.CIDR),
-				"CIDR", "", reason(overlapsV6LinkLocal), "")
-		}
+	if ipNet.Version() == 6 && ipNet.IsNetOverlap(ipv6LinkLocalNet) {
+		sl.ReportError(reflect.ValueOf(pool.Spec.CIDR),
+			"CIDR", "cidr", reason(overlapsV6LinkLocal), "")
 	}
 }
 
 func validateICMPFields(sl validator.StructLevel) {
-	icmp := sl.Current().Interface().(api.ICMPFields)
+	icmp := sl.Current().Interface().(apiv2.ICMPFields)
 
 	// Due to Kernel limitations, ICMP code must always be specified with a type.
 	if icmp.Code != nil && icmp.Type == nil {
 		sl.ReportError(reflect.ValueOf(icmp.Code),
-			"Code", "", reason("ICMP code specified without an ICMP type"), "")
+			"Code", "code", reason("ICMP code specified without an ICMP type"), "")
 	}
 }
 
 func validateRule(sl validator.StructLevel) {
-	rule := sl.Current().Interface().(api.Rule)
+	rule := sl.Current().Interface().(apiv2.Rule)
 
 	// If the protocol is neither tcp (6) nor udp (17) check that the port values have not
 	// been specified.
@@ -464,49 +443,32 @@ func validateRule(sl validator.StructLevel) {
 		}
 	}
 
-	// Check that only one of the net or nets fields is specified.
-	hasNetField := rule.Source.Net != nil ||
-		rule.Destination.Net != nil ||
-		rule.Source.NotNet != nil ||
-		rule.Destination.NotNet != nil
-	hasNetsField := len(rule.Source.Nets) != 0 ||
-		len(rule.Destination.Nets) != 0 ||
-		len(rule.Source.NotNets) != 0 ||
-		len(rule.Destination.NotNets) != 0
-	if hasNetField && hasNetsField {
-		sl.ReportError(reflect.ValueOf(rule.Source.Nets),
-			"Source/Destination.Net/Nets",
-			"Source/Destination.Net/Nets",
-			reason("only one of Net and Nets fields allowed"),
-			"",
-		)
-	}
-
 	var seenV4, seenV6 bool
 
-	scanNets := func(nets []*cnet.IPNet, fieldName string) {
+	scanNets := func(nets []string, fieldName, structFieldName string) {
 		var v4, v6 bool
-		for _, n := range nets {
+		for _, net := range nets {
+			n := cnet.MustParseNetwork(net)
 			v4 = v4 || n.Version() == 4
 			v6 = v6 || n.Version() == 6
 		}
 		if rule.IPVersion != nil && ((v4 && *rule.IPVersion != 4) || (v6 && *rule.IPVersion != 6)) {
-			sl.ReportError(reflect.ValueOf(rule.Source.Net), fieldName,
-				"", reason("rule IP version doesn't match CIDR version"), "")
+			sl.ReportError(reflect.ValueOf(nets), fieldName,
+				structFieldName, reason("rule IP version doesn't match CIDR version"), "")
 		}
 		if v4 && seenV6 || v6 && seenV4 || v4 && v6 {
 			// This field makes the rule inconsistent.
 			sl.ReportError(reflect.ValueOf(nets), fieldName,
-				"", reason("rule contains both IPv4 and IPv6 CIDRs"), "")
+				structFieldName, reason("rule contains both IPv4 and IPv6 CIDRs"), "")
 		}
 		seenV4 = seenV4 || v4
 		seenV6 = seenV6 || v6
 	}
 
-	scanNets(rule.Source.GetNets(), "Source.Net(s)")
-	scanNets(rule.Source.GetNotNets(), "Source.NotNet(s)")
-	scanNets(rule.Destination.GetNets(), "Destination.Net(s)")
-	scanNets(rule.Destination.GetNotNets(), "Destination.NotNet(s)")
+	scanNets(rule.Source.Nets, "Source.nets", "Source.Nets")
+	scanNets(rule.Source.NotNets, "Source.notNets", "Source.NotNets")
+	scanNets(rule.Destination.Nets, "Destination.nets", "Destination.Nets")
+	scanNets(rule.Destination.NotNets, "Destination.notNets", "Destination.NotNets")
 }
 
 func validateBackendRule(sl validator.StructLevel) {
@@ -536,32 +498,13 @@ func validateBackendRule(sl validator.StructLevel) {
 }
 
 func validateNodeSpec(sl validator.StructLevel) {
-	ns := sl.Current().Interface().(api.NodeSpec)
+	ns := sl.Current().Interface().(apiv2.NodeSpec)
 
 	if ns.BGP != nil {
-		if ns.BGP.IPv4Address == nil && ns.BGP.IPv6Address == nil {
+		if len(ns.BGP.IPv4Address) == 0 && len(ns.BGP.IPv6Address) == 0 {
 			sl.ReportError(reflect.ValueOf(ns.BGP.IPv4Address),
 				"BGP.IPv4Address", "", reason("no BGP IP address and subnet specified"), "")
 		}
-
-		if ns.BGP.IPv4Address != nil && ns.BGP.IPv4Address.Version() != 4 {
-			sl.ReportError(reflect.ValueOf(ns.BGP.IPv4Address),
-				"BGP.IPv4Address", "", reason("invalid IPv4 address and subnet specified"), "")
-		}
-
-		if ns.BGP.IPv6Address != nil && ns.BGP.IPv6Address.Version() != 6 {
-			sl.ReportError(reflect.ValueOf(ns.BGP.IPv6Address),
-				"BGP.IPv6Address", "", reason("invalid IPv6 address and subnet specified"), "")
-		}
-	}
-}
-
-func validateBGPPeerMeta(sl validator.StructLevel) {
-	m := sl.Current().Interface().(api.BGPPeerMetadata)
-
-	if m.Scope == scope.Global && m.Node != "" {
-		sl.ReportError(reflect.ValueOf(m.Node),
-			"Metadata.Node", "", reason("no BGP Peer node name should be specified when scope is global"), "")
 	}
 }
 
@@ -580,7 +523,7 @@ func validateBackendEndpointPort(sl validator.StructLevel) {
 }
 
 func validateEndpointPort(sl validator.StructLevel) {
-	port := sl.Current().Interface().(api.EndpointPort)
+	port := sl.Current().Interface().(apiv2.EndpointPort)
 
 	if port.Protocol.String() != "tcp" && port.Protocol.String() != "udp" {
 		sl.ReportError(
@@ -630,7 +573,7 @@ func validateBackendHostEndpoint(sl validator.StructLevel) {
 }
 
 func validatePolicySpec(sl validator.StructLevel) {
-	m := sl.Current().Interface().(api.PolicySpec)
+	m := sl.Current().Interface().(apiv2.PolicySpec)
 
 	if m.DoNotTrack && m.PreDNAT {
 		sl.ReportError(reflect.ValueOf(m.PreDNAT),
@@ -644,7 +587,7 @@ func validatePolicySpec(sl validator.StructLevel) {
 
 	if m.PreDNAT && len(m.Types) > 0 {
 		for _, t := range m.Types {
-			if t == api.PolicyTypeEgress {
+			if t == apiv2.PolicyTypeEgress {
 				sl.ReportError(reflect.ValueOf(m.Types),
 					"PolicySpec.Types", "", reason("PreDNAT PolicySpec cannot have 'egress' Type"), "")
 			}
@@ -652,7 +595,7 @@ func validatePolicySpec(sl validator.StructLevel) {
 	}
 
 	// Check (and disallow) any repeats in Types field.
-	mp := map[api.PolicyType]bool{}
+	mp := map[apiv2.PolicyType]bool{}
 	for _, t := range m.Types {
 		if _, exists := mp[t]; exists {
 			sl.ReportError(reflect.ValueOf(m.Types),
@@ -666,13 +609,13 @@ func validatePolicySpec(sl validator.StructLevel) {
 	if len(m.Types) > 0 {
 		var exists bool
 		// 'ingress' type must be there if Policy has any ingress rules.
-		_, exists = mp[api.PolicyTypeIngress]
+		_, exists = mp[apiv2.PolicyTypeIngress]
 		if len(m.IngressRules) > 0 && !exists {
 			sl.ReportError(reflect.ValueOf(m.Types),
 				"PolicySpec.Types", "", reason("'ingress' must be specified when policy has ingress rules"), "")
 		}
 		// 'egress' type must be there if Policy has any egress rules.
-		_, exists = mp[api.PolicyTypeEgress]
+		_, exists = mp[apiv2.PolicyTypeEgress]
 		if len(m.EgressRules) > 0 && !exists {
 			sl.ReportError(reflect.ValueOf(m.Types),
 				"PolicySpec.Types", "", reason("'egress' must be specified when policy has egress rules"), "")
