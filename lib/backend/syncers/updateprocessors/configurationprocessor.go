@@ -34,7 +34,7 @@ import (
 // with that field and uses that as the configuration value.  An missing field
 // value is treated as a delete on that key.
 //
-// If the field specifies a "configname" tag, then the value in that tag is used
+// If the field specifies a "confignamev1" tag, then the value in that tag is used
 // as the config name, otherwise the struct field name is used.
 //
 // If the field implements the convertConfigurationField interface below, then that
@@ -84,7 +84,7 @@ var (
 //
 // This helper class simply maps the name of the resource to determine whether the
 // converted resource is global or per-node, and then creates a separate update for
-// each field, using either the name of the field or the value in the configname tag
+// each field, using either the name of the field or the value in the confignamev1 tag
 // as the actual config key with the value of the field as the config value.  The values
 // are converted as follows:
 // -  if the field is nil, or an empty string - the converted value is nil indicated a
@@ -146,12 +146,6 @@ func (c *configUpdateProcessor) processAddOrModified(kvp *model.KVPair) ([]*mode
 	if err != nil {
 		log.WithField("Key", kvp.Key).Warning("Failed to extract node/global name from key")
 		return nil, err
-	}
-
-	// Extract the Spec from the value and verify that it is the correct type.
-	if kvp.Value == nil {
-		log.WithField("Key", kvp.Key).Warning("Value in conversion was nil")
-		return nil, errors.New("Value not included in conversion")
 	}
 
 	// Extract the config override annotations from the Metadata.  This in turn will validate that
@@ -322,7 +316,7 @@ func (c *configUpdateProcessor) createV1Key(node, name string) model.Key {
 // Return the config name from the field.  The field name is either specified in the
 // configname tag, otherwise it just uses the struct field name.
 func getConfigName(field reflect.StructField) string {
-	name := field.Tag.Get("configname")
+	name := field.Tag.Get("confignamev1")
 	if name == "" {
 		name = field.Name
 	}

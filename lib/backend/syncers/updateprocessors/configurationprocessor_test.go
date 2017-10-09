@@ -133,12 +133,6 @@ var _ = Describe("Test the backend datstore multi-watch syncer", func() {
 		})
 		Expect(err).To(HaveOccurred())
 
-		By("Testing nil value on Process")
-		_, err = cc.Process(&model.KVPair{
-			Key: globalFelixKey,
-		})
-		Expect(err).To(HaveOccurred())
-
 		By("Testing non-resource type value on Process with add/mod")
 		_, err = cc.Process(&model.KVPair{
 			Key:   globalFelixKey,
@@ -342,7 +336,7 @@ var _ = Describe("Test the backend datstore multi-watch syncer", func() {
 		)
 
 		By("validating the delete keys also include the cached config options")
-		kvps, err := cc.Process(&model.KVPair{
+		kvps, err = cc.Process(&model.KVPair{
 			Key: globalClusterKey,
 		})
 		checkExpectedConfigs(
@@ -477,5 +471,5 @@ func checkExpectedConfigs(kvps []*model.KVPair, isGlobal bool, expectedNum int, 
 	}
 
 	By("checking all expected values were accounted for")
-	Expect(ev).To(HaveLen(0), fmt.Sprintf("config name missing in response: %v", kvps))
+	Expect(ev).To(HaveLen(0), fmt.Sprintf("config name missing in response"))
 }
