@@ -21,39 +21,12 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/projectcalico/libcalico-go/lib/apiv2"
-	"github.com/projectcalico/libcalico-go/lib/backend/syncers/updateprocessors"
+	"github.com/projectcalico/libcalico-go/lib/backend/syncersv1/updateprocessors"
 	"github.com/projectcalico/libcalico-go/lib/backend/model"
 	"github.com/projectcalico/libcalico-go/lib/net"
 )
 
 var (
-	perNodeFelixKey = model.ResourceKey{
-		Kind: apiv2.KindFelixConfiguration,
-		Name: "node.mynode",
-	}
-	globalFelixKey = model.ResourceKey{
-		Kind: apiv2.KindFelixConfiguration,
-		Name: "default",
-	}
-	invalidFelixKey = model.ResourceKey{
-		Kind: apiv2.KindFelixConfiguration,
-		Name: "foobar",
-	}
-	globalClusterKey = model.ResourceKey{
-		Kind: apiv2.KindClusterInformation,
-		Name: "default",
-	}
-	nodeClusterKey = model.ResourceKey{
-		Kind: apiv2.KindClusterInformation,
-		Name: "node.mynode",
-	}
-	numFelixConfigs   = 46
-	numClusterConfigs = 3
-	felixMappedNames  = map[string]interface{}{
-		"RouteRefreshInterval": nil,
-		"IptablesRefreshInterval": nil,
-		"IpsetsRefreshInterval": nil,
-	}
 
 	// Definitions to make the test code more readable
 	isGlobalConfig = true
@@ -61,6 +34,34 @@ var (
 )
 
 var _ = Describe("Test the backend datstore multi-watch syncer", func() {
+	// Define some common values
+	perNodeFelixKey := model.ResourceKey{
+		Kind: apiv2.KindFelixConfiguration,
+		Name: "node.mynode",
+	}
+	globalFelixKey := model.ResourceKey{
+		Kind: apiv2.KindFelixConfiguration,
+		Name: "default",
+	}
+	invalidFelixKey := model.ResourceKey{
+		Kind: apiv2.KindFelixConfiguration,
+		Name: "foobar",
+	}
+	globalClusterKey := model.ResourceKey{
+		Kind: apiv2.KindClusterInformation,
+		Name: "default",
+	}
+	nodeClusterKey := model.ResourceKey{
+		Kind: apiv2.KindClusterInformation,
+		Name: "node.mynode",
+	}
+	numFelixConfigs   := 46
+	numClusterConfigs := 3
+	felixMappedNames  := map[string]interface{}{
+		"RouteRefreshInterval": nil,
+		"IptablesRefreshInterval": nil,
+		"IpsetsRefreshInterval": nil,
+	}
 
 	It("should handle conversion of node-specific delete with no additional configs", func() {
 		cc := updateprocessors.NewFelixConfigUpdateProcessor()

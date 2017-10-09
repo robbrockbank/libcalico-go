@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package felixsyncer
+package bgpsyncer
 
 import (
 	"github.com/projectcalico/libcalico-go/lib/apiv2"
 	"github.com/projectcalico/libcalico-go/lib/backend/api"
-	"github.com/projectcalico/libcalico-go/lib/backend/syncers/updateprocessors"
 	"github.com/projectcalico/libcalico-go/lib/backend/model"
 	"github.com/projectcalico/libcalico-go/lib/backend/watchersyncer"
+	"github.com/projectcalico/libcalico-go/lib/backend/syncersv1/updateprocessors"
 )
 
 
@@ -31,34 +31,18 @@ func New(client api.Client, callbacks api.SyncerCallbacks) api.Syncer {
 	// a common global set.
 	resourceTypes := []watchersyncer.ResourceType{
 		{
-			ListInterface: model.ResourceListOptions{Kind: apiv2.KindClusterInformation},
-			Converter:     updateprocessors.NewClusterInfoUpdateProcessor(),
-		},
-		{
-			ListInterface: model.ResourceListOptions{Kind: apiv2.KindFelixConfiguration},
-			Converter:     updateprocessors.NewFelixConfigUpdateProcessor(),
-		},
-		{
-			ListInterface: model.ResourceListOptions{Kind: apiv2.KindGlobalNetworkPolicy},
-		},
-		{
-			ListInterface: model.ResourceListOptions{Kind: apiv2.KindHostEndpoint},
-		},
-		{
 			ListInterface: model.ResourceListOptions{Kind: apiv2.KindIPPool},
 			Converter:     updateprocessors.NewIPPoolUpdateProcessor(),
 		},
 		{
-			ListInterface: model.ResourceListOptions{Kind: apiv2.KindNetworkPolicy},
+			ListInterface: model.ResourceListOptions{Kind: apiv2.KindBGPConfiguration},
+			Converter:     updateprocessors.NewFelixConfigUpdateProcessor(),
 		},
 		{
 			ListInterface: model.ResourceListOptions{Kind: apiv2.KindNode},
 		},
 		{
-			ListInterface: model.ResourceListOptions{Kind: apiv2.KindProfile},
-		},
-		{
-			ListInterface: model.ResourceListOptions{Kind: apiv2.KindWorkloadEndpoint},
+			ListInterface: model.ResourceListOptions{Kind: apiv2.KindBGPPeer},
 		},
 	}
 

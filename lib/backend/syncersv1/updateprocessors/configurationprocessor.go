@@ -29,16 +29,17 @@ import (
 )
 
 // NewConfigUpdateProcessor creates a SyncerUpdateProcessor that can be used to map
-// Configuration-type resources to Felix v1 model.  This converter basically
-// expands each field as a separate key and stringifies the value associate
-// with that field and uses that as the configuration value.  An missing field
-// value is treated as a delete on that key.
+// Configuration-type resources to the v1 model.  This converter basically
+// expands each field as a separate key and uses a stringified of the field as the
+// configuration value.  If the field is not specified in the configuration resource
+// we expand that that a delete for the associated key.
 //
 // If the field specifies a "confignamev1" tag, then the value in that tag is used
 // as the config name, otherwise the struct field name is used.
 //
-// If the field implements the convertConfigurationField interface below, then that
-// will be used to convert the field to the string value required by Felix.
+// A set of ValueToStringFn can be specified for each of the (converted) field names
+// to handle marshaling the field value into the string value required in the v1
+// model.
 //
 // It is assumed that the name of the resource follows the format:
 // - `default` for global
