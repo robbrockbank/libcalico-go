@@ -16,72 +16,61 @@ package updateprocessors
 
 import (
 	"errors"
-	"sync"
 
+	"github.com/projectcalico/libcalico-go/lib/apiv2"
 	"github.com/projectcalico/libcalico-go/lib/backend/model"
 	"github.com/projectcalico/libcalico-go/lib/backend/watchersyncer"
+	"github.com/projectcalico/libcalico-go/lib/converter/modelv2v1"
 )
 
 // Create a new NewIPPoolUpdateProcessor.
 func NewIPPoolUpdateProcessor() watchersyncer.SyncerUpdateProcessor {
 	return &ipPoolUpdateProcessor{
-		poolsByCidr: make(map[string][]*model.IPPool),
-		cidrByName:  make(map[string]string),
+		cache: NewConflictResolvingCache(),
 	}
 }
 
-// ipPoolUpdateProcessor implements the SyncerUpdateProcessor interface.  IPPool conversion
-// is a little tricky because the v1 index is now an arbitrary field in v2.  This means
-// update events may trigger v1 deletions, and multiple IP pools may share the same CIDR
-// (a misconfiguration, but one we should handle gracefully).
+// ipPoolUpdateProcessor implements the SyncerUpdateProcessor interface.
+// Most of the heavy lifting is handled by the convert functions (to convert a v2 resource
+// to a v1 key and value), and the ConflictResolvingCache which handles the different
+// indexing between v2 and v2 and provides deterministic conflict resolution.
 type ipPoolUpdateProcessor struct {
-	poolsByCidr map[string][]*model.IPPool
-	cidrByName  map[string]string
-	lock        sync.Mutex
-}
-
-func (c *ipPoolUpdateProcessor) ProcessDeleted(k model.Key) ([]model.Key, error) {
-	// Extract the name.
-	_, err := c.extractName(k)
-	if err != nil {
-		return nil, err
-	}
-	/*
-		// Look up the previous pool settings for this name, and remove from the cache.
-		previous, ok := c.poolsByName[name]
-		if !ok {
-			return nil, errors.New("Delete request for unknown pool")
-		}
-		delete(c.poolsByName, name)
-
-		// If this was the "active" pool for the old CIDR then send the key for delete, otherwise
-		// no need to send any events.
-		cidr := previous.Key.(model.IPPoolKey).CIDR.String()
-		if c.namesByCidr[cidr] == name {
-			return []model.Key{previous.Key}, nil
-		}
-	*/
-	return nil, nil
+	cache ConflictResolvingCache
+	modelv2v1.IPPoolConverter
 }
 
 func (c *ipPoolUpdateProcessor) Process(kvp *model.KVPair) ([]*model.KVPair, error) {
 	// Extract the name.
-	_, err := c.extractName(kvp.Key)
+	name, err := c.extractName(kvp.Key)
 	if err != nil {
 		return nil, err
 	}
-	return nil, err
+
+	// For a delete, we just call through to the cache - it will provide the syncer updates
+	// for the delete based on the v2 resource name.
+	if kvp.Value == nil {
+		return c.cache.Delete(name)
+	}
+
+	// For an add/update we need to convert the v2 resource to the appropriate v1 Key and
+	// model value.
+	kvp, err = c.ConvertV2ToV1(kvp)
+	if err != nil {
+		return nil, err
+	}
+
+	// And use the cache to handle conflicts.
+	return c.cache.AddOrModify(name, kvp)
 }
 
 // Sync is restarting, clear our local cache.
 func (c *ipPoolUpdateProcessor) SyncStarting() {
-	c.poolsByCidr = make(map[string][]*model.IPPool)
-	c.cidrByName = make(map[string]string)
+	c.cache.ClearCache()
 }
 
 func (c *ipPoolUpdateProcessor) extractName(k model.Key) (string, error) {
 	rk, ok := k.(model.ResourceKey)
-	if !ok {
+	if !ok || rk.Kind != apiv2.KindIPPool {
 		return "", errors.New("Incorrect key type")
 	}
 	return rk.Name, nil

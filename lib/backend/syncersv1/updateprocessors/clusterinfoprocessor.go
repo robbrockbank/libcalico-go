@@ -26,6 +26,7 @@ import (
 func NewClusterInfoUpdateProcessor() watchersyncer.SyncerUpdateProcessor {
 	return NewConfigUpdateProcessor(
 		reflect.TypeOf(apiv2.ClusterInformationSpec{}),
+		DisallowAnnotations,
 		func(node, name string) model.Key { return model.HostConfigKey{Hostname: node, Name: name} },
 		func(name string) model.Key { return model.GlobalConfigKey{Name: name} },
 		nil,

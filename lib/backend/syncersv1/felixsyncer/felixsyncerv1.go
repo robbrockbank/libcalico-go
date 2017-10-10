@@ -17,11 +17,10 @@ package felixsyncer
 import (
 	"github.com/projectcalico/libcalico-go/lib/apiv2"
 	"github.com/projectcalico/libcalico-go/lib/backend/api"
-	"github.com/projectcalico/libcalico-go/lib/backend/syncersv1/updateprocessors"
 	"github.com/projectcalico/libcalico-go/lib/backend/model"
+	"github.com/projectcalico/libcalico-go/lib/backend/syncersv1/updateprocessors"
 	"github.com/projectcalico/libcalico-go/lib/backend/watchersyncer"
 )
-
 
 // New creates a new Felix v1 Syncer.  Currently only the etcdv3 backend is supported
 // since KDD does not yet fully support Watchers.
@@ -31,12 +30,12 @@ func New(client api.Client, callbacks api.SyncerCallbacks) api.Syncer {
 	// a common global set.
 	resourceTypes := []watchersyncer.ResourceType{
 		{
-			ListInterface: model.ResourceListOptions{Kind: apiv2.KindClusterInformation},
-			Converter:     updateprocessors.NewClusterInfoUpdateProcessor(),
+			ListInterface:   model.ResourceListOptions{Kind: apiv2.KindClusterInformation},
+			UpdateProcessor: updateprocessors.NewClusterInfoUpdateProcessor(),
 		},
 		{
-			ListInterface: model.ResourceListOptions{Kind: apiv2.KindFelixConfiguration},
-			Converter:     updateprocessors.NewFelixConfigUpdateProcessor(),
+			ListInterface:   model.ResourceListOptions{Kind: apiv2.KindFelixConfiguration},
+			UpdateProcessor: updateprocessors.NewFelixConfigUpdateProcessor(),
 		},
 		{
 			ListInterface: model.ResourceListOptions{Kind: apiv2.KindGlobalNetworkPolicy},
@@ -45,8 +44,8 @@ func New(client api.Client, callbacks api.SyncerCallbacks) api.Syncer {
 			ListInterface: model.ResourceListOptions{Kind: apiv2.KindHostEndpoint},
 		},
 		{
-			ListInterface: model.ResourceListOptions{Kind: apiv2.KindIPPool},
-			Converter:     updateprocessors.NewIPPoolUpdateProcessor(),
+			ListInterface:   model.ResourceListOptions{Kind: apiv2.KindIPPool},
+			UpdateProcessor: updateprocessors.NewIPPoolUpdateProcessor(),
 		},
 		{
 			ListInterface: model.ResourceListOptions{Kind: apiv2.KindNetworkPolicy},

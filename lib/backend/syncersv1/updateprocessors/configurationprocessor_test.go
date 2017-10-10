@@ -21,19 +21,21 @@ import (
 	. "github.com/onsi/gomega"
 
 	"github.com/projectcalico/libcalico-go/lib/apiv2"
-	"github.com/projectcalico/libcalico-go/lib/backend/syncersv1/updateprocessors"
 	"github.com/projectcalico/libcalico-go/lib/backend/model"
+	"github.com/projectcalico/libcalico-go/lib/backend/syncersv1/updateprocessors"
 	"github.com/projectcalico/libcalico-go/lib/net"
+	"github.com/projectcalico/libcalico-go/lib/numorstring"
 )
 
-var (
-
-	// Definitions to make the test code more readable
-	isGlobalConfig = true
-	isNodeConfig   = false
+const (
+	// What the expected sync datatypes are.
+	isGlobalFelixConfig = iota
+	isNodeFelixConfig
+	isGlobalBgpConfig
+	isNodeBgpConfig
 )
 
-var _ = Describe("Test the backend datstore multi-watch syncer", func() {
+var _ = Describe("Test the generic configuration update processor and the concrete implementations", func() {
 	// Define some common values
 	perNodeFelixKey := model.ResourceKey{
 		Kind: apiv2.KindFelixConfiguration,
@@ -55,12 +57,21 @@ var _ = Describe("Test the backend datstore multi-watch syncer", func() {
 		Kind: apiv2.KindClusterInformation,
 		Name: "node.mynode",
 	}
-	numFelixConfigs   := 46
+	globalBgpConfigKey := model.ResourceKey{
+		Kind: apiv2.KindBGPConfiguration,
+		Name: "default",
+	}
+	nodeBgpConfigKey := model.ResourceKey{
+		Kind: apiv2.KindBGPConfiguration,
+		Name: "node.bgpnode1",
+	}
+	numFelixConfigs := 46
 	numClusterConfigs := 3
-	felixMappedNames  := map[string]interface{}{
-		"RouteRefreshInterval": nil,
+	numBgpConfigs := 3
+	felixMappedNames := map[string]interface{}{
+		"RouteRefreshInterval":    nil,
 		"IptablesRefreshInterval": nil,
-		"IpsetsRefreshInterval": nil,
+		"IpsetsRefreshInterval":   nil,
 	}
 
 	It("should handle conversion of node-specific delete with no additional configs", func() {
@@ -70,7 +81,7 @@ var _ = Describe("Test the backend datstore multi-watch syncer", func() {
 			Key: perNodeFelixKey,
 		})
 		Expect(err).NotTo(HaveOccurred())
-		checkExpectedConfigs(kvps, isNodeConfig, numFelixConfigs, felixMappedNames)
+		checkExpectedConfigs(kvps, isNodeFelixConfig, numFelixConfigs, felixMappedNames)
 	})
 
 	It("should handle conversion of global delete with no additional configs", func() {
@@ -80,7 +91,7 @@ var _ = Describe("Test the backend datstore multi-watch syncer", func() {
 			Key: globalFelixKey,
 		})
 		Expect(err).NotTo(HaveOccurred())
-		checkExpectedConfigs(kvps, isGlobalConfig, numFelixConfigs, felixMappedNames)
+		checkExpectedConfigs(kvps, isGlobalFelixConfig, numFelixConfigs, felixMappedNames)
 	})
 
 	It("should handle conversion of node-specific zero value KVPairs with no additional configs", func() {
@@ -93,7 +104,7 @@ var _ = Describe("Test the backend datstore multi-watch syncer", func() {
 		// Explicitly pass in the "mapped" name values to check to ensure the names are mapped.
 		checkExpectedConfigs(
 			kvps,
-			isNodeConfig,
+			isNodeFelixConfig,
 			numFelixConfigs,
 			felixMappedNames,
 		)
@@ -109,7 +120,7 @@ var _ = Describe("Test the backend datstore multi-watch syncer", func() {
 		// Explicitly pass in the "mapped" name values to check to ensure the names are mapped.
 		checkExpectedConfigs(
 			kvps,
-			isGlobalConfig,
+			isGlobalFelixConfig,
 			numFelixConfigs,
 			felixMappedNames,
 		)
@@ -203,7 +214,7 @@ var _ = Describe("Test the backend datstore multi-watch syncer", func() {
 		Expect(err).NotTo(HaveOccurred())
 		checkExpectedConfigs(
 			kvps,
-			isNodeConfig,
+			isNodeFelixConfig,
 			numFelixConfigs,
 			expected,
 		)
@@ -214,10 +225,7 @@ var _ = Describe("Test the backend datstore multi-watch syncer", func() {
 		By("converting a global cluster info KVPair with values assigned")
 		res := apiv2.NewClusterInformation()
 		res.Spec.ClusterGUID = "abcedfg"
-		res.Spec.ClusterType = []string{
-			"Mesos",
-			"K8s",
-		}
+		res.Spec.ClusterType = "Mesos,K8s"
 		expected := map[string]interface{}{
 			"ClusterGUID": "abcedfg",
 			"ClusterType": "Mesos,K8s",
@@ -229,66 +237,64 @@ var _ = Describe("Test the backend datstore multi-watch syncer", func() {
 		Expect(err).NotTo(HaveOccurred())
 		checkExpectedConfigs(
 			kvps,
-			isGlobalConfig,
+			isGlobalFelixConfig,
 			numClusterConfigs,
 			expected,
 		)
 	})
 
 	It("should allow setting of a known field through an annotation to override validation", func() {
-		cc := updateprocessors.NewClusterInfoUpdateProcessor()
-		res := apiv2.NewClusterInformation()
+		cc := updateprocessors.NewBGPConfigUpdateProcessor()
+		res := apiv2.NewBGPConfiguration()
 		res.Annotations = map[string]string{
-			"config.projectcalico.org/ClusterType": "this is not validated!",
+			"config.projectcalico.org/loglevel": "this is not validated!",
 		}
 		expected := map[string]interface{}{
-			"ClusterType": "this is not validated!",
+			"loglevel": "this is not validated!",
 		}
 		kvps, err := cc.Process(&model.KVPair{
-			Key:   globalClusterKey,
+			Key:   globalBgpConfigKey,
 			Value: res,
 		})
 		Expect(err).NotTo(HaveOccurred())
 		checkExpectedConfigs(
 			kvps,
-			isGlobalConfig,
-			numClusterConfigs,
+			isGlobalBgpConfig,
+			numBgpConfigs,
 			expected,
 		)
 	})
 
 	It("should override struct value when equivalent annotation is set", func() {
-		cc := updateprocessors.NewClusterInfoUpdateProcessor()
-		res := apiv2.NewClusterInformation()
+		cc := updateprocessors.NewBGPConfigUpdateProcessor()
+		res := apiv2.NewBGPConfiguration()
 		res.Annotations = map[string]string{
-			"config.projectcalico.org/ClusterType":   "this is not validated!",
-			"config.projectcalico.org/CalicoVersion": "version foobar",
+			"config.projectcalico.org/loglevel":   "this is not validated!",
+			"config.projectcalico.org/as_num": "asnum foobar",
 		}
-		res.Spec.ClusterType = []string{
-			"Mesos",
-			"K8s",
-		}
-		res.Spec.CalicoVersion = "calicov1"
+		asNum := numorstring.ASNumber(12345)
+		res.Spec.DefaultNodeASNumber = &asNum
+		res.Spec.LogSeverityScreen = "debug"
 		expected := map[string]interface{}{
-			"ClusterType":   "this is not validated!",
-			"CalicoVersion": "version foobar",
+			"loglevel":   "this is not validated!",
+			"as_num": "asnum foobar",
 		}
 		kvps, err := cc.Process(&model.KVPair{
-			Key:   nodeClusterKey,
+			Key:   globalBgpConfigKey,
 			Value: res,
 		})
 		Expect(err).NotTo(HaveOccurred())
 		checkExpectedConfigs(
 			kvps,
-			isNodeConfig,
-			numClusterConfigs,
+			isGlobalBgpConfig,
+			numBgpConfigs,
 			expected,
 		)
 	})
 
 	It("should handle new config options specified through annotations", func() {
-		cc := updateprocessors.NewClusterInfoUpdateProcessor()
-		res := apiv2.NewClusterInformation()
+		cc := updateprocessors.NewBGPConfigUpdateProcessor()
+		res := apiv2.NewBGPConfiguration()
 
 		By("validating that the new values are output in addition to the existing ones")
 		res.Annotations = map[string]string{
@@ -296,56 +302,54 @@ var _ = Describe("Test the backend datstore multi-watch syncer", func() {
 			"config.projectcalico.org/AnotherNewConfigType": "newFieldValue2",
 			"thisisnotvalid":                                "not included",
 		}
-		res.Spec.ClusterType = []string{
-			"Mesos",
-			"K8s",
-		}
+		asNum := numorstring.ASNumber(12345)
+		res.Spec.DefaultNodeASNumber = &asNum
 		expected := map[string]interface{}{
-			"ClusterType":          "Mesos,K8s",
+			"as_num":          "12345",
 			"NewConfigType":        "newFieldValue",
 			"AnotherNewConfigType": "newFieldValue2",
 		}
 		kvps, err := cc.Process(&model.KVPair{
-			Key:   globalClusterKey,
+			Key:   globalBgpConfigKey,
 			Value: res,
 		})
 		Expect(err).NotTo(HaveOccurred())
 		checkExpectedConfigs(
 			kvps,
-			isGlobalConfig,
-			numClusterConfigs+2,
+			isGlobalBgpConfig,
+			numBgpConfigs+2,
 			expected,
 		)
 
 		By("validating that the options are persisted to allow delete notifications")
 		res.Annotations = nil
 		expected = map[string]interface{}{
-			"ClusterType":          "Mesos,K8s",
+			"as_num":          "12345",
 			"NewConfigType":        nil,
 			"AnotherNewConfigType": nil,
 		}
 		kvps, err = cc.Process(&model.KVPair{
-			Key:   globalClusterKey,
+			Key:   globalBgpConfigKey,
 			Value: res,
 		})
 		Expect(err).NotTo(HaveOccurred())
 		checkExpectedConfigs(
 			kvps,
-			isGlobalConfig,
-			numClusterConfigs+2,
+			isGlobalBgpConfig,
+			numBgpConfigs+2,
 			expected,
 		)
 
 		By("validating the delete keys also include the cached config options")
 		kvps, err = cc.Process(&model.KVPair{
-			Key: globalClusterKey,
+			Key: globalBgpConfigKey,
 		})
 		checkExpectedConfigs(
 			kvps,
-			isGlobalConfig,
-			numClusterConfigs+2,
+			isGlobalBgpConfig,
+			numBgpConfigs+2,
 			map[string]interface{}{
-				"NewConfigType": nil,
+				"NewConfigType":        nil,
 				"AnotherNewConfigType": nil,
 			},
 		)
@@ -355,36 +359,36 @@ var _ = Describe("Test the backend datstore multi-watch syncer", func() {
 			"config.projectcalico.org/NewConfigType":           "foobar",
 			"config.projectcalico.org/YetAnotherNewConfigType": "foobarbaz",
 		}
-		res.Spec.ClusterType = nil
+		res.Spec.DefaultNodeASNumber = nil
 		expected = map[string]interface{}{
-			"ClusterType":             "",
+			"as_num":             nil,
 			"NewConfigType":           "foobar",
 			"AnotherNewConfigType":    nil,
 			"YetAnotherNewConfigType": "foobarbaz",
 		}
 		kvps, err = cc.Process(&model.KVPair{
-			Key:   globalClusterKey,
+			Key:   globalBgpConfigKey,
 			Value: res,
 		})
 		Expect(err).NotTo(HaveOccurred())
 		checkExpectedConfigs(
 			kvps,
-			isGlobalConfig,
-			numClusterConfigs+3,
+			isGlobalBgpConfig,
+			numBgpConfigs+3,
 			expected,
 		)
 
 		By("validating the delete keys also include the new cached config option")
 		kvps, err = cc.Process(&model.KVPair{
-			Key: globalClusterKey,
+			Key: globalBgpConfigKey,
 		})
 		checkExpectedConfigs(
 			kvps,
-			isGlobalConfig,
-			numClusterConfigs+3,
+			isGlobalBgpConfig,
+			numBgpConfigs+3,
 			map[string]interface{}{
-				"NewConfigType": nil,
-				"AnotherNewConfigType": nil,
+				"NewConfigType":           nil,
+				"AnotherNewConfigType":    nil,
 				"YetAnotherNewConfigType": nil,
 			},
 		)
@@ -392,20 +396,17 @@ var _ = Describe("Test the backend datstore multi-watch syncer", func() {
 		By("invoking resync and checking old fields are no longer cached")
 		cc.SyncStarting()
 		res.Annotations = nil
-		res.Spec.ClusterType = nil
+		res.Spec.DefaultNodeASNumber = nil
 		kvps, err = cc.Process(&model.KVPair{
-			Key:   globalClusterKey,
+			Key:   globalBgpConfigKey,
 			Value: res,
 		})
 		Expect(err).NotTo(HaveOccurred())
-		expected = map[string]interface{}{
-			"ClusterType": "",
-		}
 		checkExpectedConfigs(
 			kvps,
-			isGlobalConfig,
-			numClusterConfigs,
-			expected,
+			isGlobalBgpConfig,
+			numBgpConfigs,
+			nil,
 		)
 
 		By("validating the delete keys are also back to original")
@@ -414,7 +415,132 @@ var _ = Describe("Test the backend datstore multi-watch syncer", func() {
 		})
 		checkExpectedConfigs(
 			kvps,
-			isGlobalConfig,
+			isGlobalBgpConfig,
+			numBgpConfigs,
+			nil,
+		)
+	})
+
+	It("should handle BGP configuration correctly", func() {
+		cc := updateprocessors.NewBGPConfigUpdateProcessor()
+		res := apiv2.NewBGPConfiguration()
+
+		By("validating an empty configuration")
+		expected := map[string]interface{}{
+			"loglevel":  nil,
+			"as_num":    nil,
+			"node_mesh": nil,
+		}
+		kvps, err := cc.Process(&model.KVPair{
+			Key:   globalBgpConfigKey,
+			Value: res,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		checkExpectedConfigs(
+			kvps,
+			isGlobalBgpConfig,
+			numBgpConfigs,
+			expected,
+		)
+
+		By("validating a full configuration")
+		asNum := numorstring.ASNumber(12345)
+		n2n := true
+		res.Spec.LogSeverityScreen = "warning"
+		res.Spec.DefaultNodeASNumber = &asNum
+		res.Spec.NodeToNodeMeshEnabled = &n2n
+		expected = map[string]interface{}{
+			"loglevel":  "none",
+			"as_num":    "12345",
+			"node_mesh": "{\"enabled\":true}",
+		}
+		kvps, err = cc.Process(&model.KVPair{
+			Key:   globalBgpConfigKey,
+			Value: res,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		checkExpectedConfigs(
+			kvps,
+			isGlobalBgpConfig,
+			numBgpConfigs,
+			expected,
+		)
+
+		By("validating a partial configuration")
+		n2n = false
+		res.Spec.LogSeverityScreen = "debug"
+		res.Spec.DefaultNodeASNumber = nil
+		res.Spec.NodeToNodeMeshEnabled = &n2n
+		expected = map[string]interface{}{
+			"loglevel":  "debug",
+			"as_num":    nil,
+			"node_mesh": "{\"enabled\":false}",
+		}
+		kvps, err = cc.Process(&model.KVPair{
+			Key:   globalBgpConfigKey,
+			Value: res,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		checkExpectedConfigs(
+			kvps,
+			isGlobalBgpConfig,
+			numBgpConfigs,
+			expected,
+		)
+
+		By("validating node specific configuration")
+		n2n = false
+		res.Spec.LogSeverityScreen = "debug"
+		res.Spec.DefaultNodeASNumber = nil
+		res.Spec.NodeToNodeMeshEnabled = nil
+		expected = map[string]interface{}{
+			"loglevel":  "debug",
+			"as_num":    nil,
+			"node_mesh": nil,
+		}
+		kvps, err = cc.Process(&model.KVPair{
+			Key:   nodeBgpConfigKey,
+			Value: res,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		checkExpectedConfigs(
+			kvps,
+			isNodeBgpConfig,
+			numBgpConfigs,
+			expected,
+		)
+	})
+
+	It("should handle node cluster information", func() {
+		cc := updateprocessors.NewClusterInfoUpdateProcessor()
+		res := apiv2.NewClusterInformation()
+
+		By("validating an empty per node cluster is processed correctly")
+		kvps, err := cc.Process(&model.KVPair{
+			Key:   nodeClusterKey,
+			Value: res,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		checkExpectedConfigs(
+			kvps,
+			isNodeFelixConfig,
+			numClusterConfigs,
+			nil,
+		)
+
+		By("validating it is not possible to set/override values using the annotations")
+		res.Annotations = map[string]string{
+			"config.projectcalico.org/ClusterType": "this is not validated!",
+			"config.projectcalico.org/NewField": "this is also not validated!",
+		}
+		kvps, err = cc.Process(&model.KVPair{
+			Key:   nodeClusterKey,
+			Value: res,
+		})
+		Expect(err).NotTo(HaveOccurred())
+		checkExpectedConfigs(
+			kvps,
+			isNodeFelixConfig,
 			numClusterConfigs,
 			nil,
 		)
@@ -426,7 +552,7 @@ var _ = Describe("Test the backend datstore multi-watch syncer", func() {
 // to be nil in the KVPair.
 // You can use expectedValues to verify certain fields were included in the response even
 // if the values were nil.
-func checkExpectedConfigs(kvps []*model.KVPair, isGlobal bool, expectedNum int, expectedValues map[string]interface{}) {
+func checkExpectedConfigs(kvps []*model.KVPair, dataType int, expectedNum int, expectedValues map[string]interface{}) {
 	// Copy/convert input data.  We keep track of:
 	// - all field names, so that we can check for duplicates
 	// - extra fields that we have not yet seen
@@ -443,14 +569,23 @@ func checkExpectedConfigs(kvps []*model.KVPair, isGlobal bool, expectedNum int, 
 	By("checking for duplicated, nil values and assigned values as expected")
 	for _, kvp := range kvps {
 		var name string
-		if isGlobal {
+		switch dataType {
+		case isGlobalFelixConfig:
 			Expect(kvp.Key).To(BeAssignableToTypeOf(model.GlobalConfigKey{}))
 			name = kvp.Key.(model.GlobalConfigKey).Name
-		} else {
+		case isNodeFelixConfig:
 			Expect(kvp.Key).To(BeAssignableToTypeOf(model.HostConfigKey{}))
 			node := kvp.Key.(model.HostConfigKey).Hostname
 			Expect(node).To(Equal("mynode"))
 			name = kvp.Key.(model.HostConfigKey).Name
+		case isGlobalBgpConfig:
+			Expect(kvp.Key).To(BeAssignableToTypeOf(model.GlobalBGPConfigKey{}))
+			name = kvp.Key.(model.GlobalBGPConfigKey).Name
+		case isNodeBgpConfig:
+			Expect(kvp.Key).To(BeAssignableToTypeOf(model.NodeBGPConfigKey{}))
+			node := kvp.Key.(model.NodeBGPConfigKey).Nodename
+			Expect(node).To(Equal("bgpnode1"))
+			name = kvp.Key.(model.NodeBGPConfigKey).Name
 		}
 
 		// Validate and track the expected values.

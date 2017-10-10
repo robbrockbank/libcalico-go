@@ -39,11 +39,11 @@ type BGPConfiguration struct {
 // BGPConfigurationSpec contains the values of the BGP configuration.
 type BGPConfigurationSpec struct {
 	// LogSeverityScreen is the log severity above which logs are sent to the stdout. [Default: INFO]
-	LogSeverityScreen string `json:"logSeverityScreen,omitempty" validate:"omitempty"`
+	LogSeverityScreen string `json:"logSeverityScreen,omitempty" validate:"omitempty" confignamev1:"loglevel"`
 	// NodeToNodeMeshEnabled sets whether full node to node BGP mesh is enabled. [Default: true]
-	NodeToNodeMeshEnabled *bool `json:"nodeToNodeMeshEnabled,omitempty" validate:"omitempty"`
+	NodeToNodeMeshEnabled *bool `json:"nodeToNodeMeshEnabled,omitempty" validate:"omitempty" confignamev1:"node_mesh"`
 	// DefaultNodeASNumber is the default AS number used by a node. [Default: 64512]
-	DefaultNodeASNumber *numorstring.ASNumber `json:"defaultNodeASNumber,omitempty" validate:"omitempty"`
+	DefaultNodeASNumber *numorstring.ASNumber `json:"defaultNodeASNumber,omitempty" validate:"omitempty" confignamev1:"as_num"`
 }
 
 // BGPConfigurationList contains a list of BGPConfiguration resources.

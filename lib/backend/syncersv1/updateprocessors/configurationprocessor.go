@@ -28,6 +28,11 @@ import (
 	cerrors "github.com/projectcalico/libcalico-go/lib/errors"
 )
 
+const (
+	AllowAnnotations = true
+	DisallowAnnotations = false
+)
+
 // NewConfigUpdateProcessor creates a SyncerUpdateProcessor that can be used to map
 // Configuration-type resources to the v1 model.  This converter basically
 // expands each field as a separate key and uses a stringified of the field as the
@@ -46,6 +51,7 @@ import (
 // - `node.<nodename>` for per-node
 func NewConfigUpdateProcessor(
 	specType reflect.Type,
+	allowAnnotations bool,
 	nodeConfigKeyFn NodeConfigKeyFn,
 	globalConfigKeyFn GlobalConfigKeyFn,
 	stringifiers map[string]ValueToStringFn,
@@ -56,6 +62,7 @@ func NewConfigUpdateProcessor(
 	}
 	return &configUpdateProcessor{
 		specType:          specType,
+		allowAnnotations:  allowAnnotations,
 		nodeConfigKeyFn:   nodeConfigKeyFn,
 		globalConfigKeyFn: globalConfigKeyFn,
 		names:             names,
@@ -101,6 +108,7 @@ var (
 // removed from an annotation.
 type configUpdateProcessor struct {
 	specType          reflect.Type
+	allowAnnotations  bool
 	nodeConfigKeyFn   NodeConfigKeyFn
 	globalConfigKeyFn GlobalConfigKeyFn
 	names             map[string]struct{}
@@ -126,13 +134,13 @@ func (c *configUpdateProcessor) processDeleted(kvp *model.KVPair) ([]*model.KVPa
 	kvps := make([]*model.KVPair, len(c.names)+len(c.additionalNames))
 	i := 0
 	for name := range c.names {
-		kvps[i] = &model.KVPair {
+		kvps[i] = &model.KVPair{
 			Key: c.createV1Key(node, name),
 		}
 		i++
 	}
 	for name := range c.additionalNames {
-		kvps[i] = &model.KVPair {
+		kvps[i] = &model.KVPair{
 			Key: c.createV1Key(node, name),
 		}
 		i++
@@ -210,8 +218,6 @@ func (c *configUpdateProcessor) processAddOrModified(kvp *model.KVPair) ([]*mode
 			switch vt := value.(type) {
 			case string:
 				value = vt
-			case []string:
-				value = strings.Join(vt, ",")
 			default:
 				value = fmt.Sprintf("%v", vt)
 			}
@@ -273,8 +279,16 @@ func (c *configUpdateProcessor) extractAnnotations(kvp *model.KVPair) (map[strin
 	if !ok {
 		return nil, errors.New("Unexpected value type in conversion")
 	}
-	annotations := ma.GetObjectMeta().GetAnnotations()
 	overrides := map[string]string{}
+
+	// If annotations are not allowed, don't bother extracting them - just return an empty
+	// map.
+	if !c.allowAnnotations {
+		log.Debug("Annotations are disallowed - skipping extraction")
+		return overrides, nil
+	}
+
+	annotations := ma.GetObjectMeta().GetAnnotations()
 	for k, v := range annotations {
 		if strings.HasPrefix(k, annotationConfigPrefix) {
 			overrides[k[len(annotationConfigPrefix):]] = v

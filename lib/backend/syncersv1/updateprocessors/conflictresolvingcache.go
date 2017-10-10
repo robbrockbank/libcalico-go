@@ -15,15 +15,16 @@
 package updateprocessors
 
 import (
-	"sort"
 	"fmt"
+	"sort"
 
 	log "github.com/sirupsen/logrus"
 
 	"github.com/projectcalico/libcalico-go/lib/backend/model"
+	cerrors "github.com/projectcalico/libcalico-go/lib/errors"
 )
 
-// conflictResolvingNameCache implements a cache that may be used to handle resources
+// ConflictResolvingNameCache implements a cache that may be used to handle resources
 // where the indexing has changed between the v2 and v1 models.  In v2 all resources have
 // a single name field which in some cases may be unlinked to the v1 indexes.  This means
 // it's potentially possible to have multiple v2 resources that share a common set of indexes
@@ -49,16 +50,39 @@ import (
 // -  Modifying an existing resource (that is already in our cache) is more complicated.
 //    It is possible that the modification may alter the v1 key - and in which case we need
 //    to effectively treat as a delete (for the old v1 key) and an add for the new v1 key.
+func NewConflictResolvingCache() ConflictResolvingCache {
+	return &conflictResolvingCache{
+		kvpsByName:          make(map[string]*model.KVPair),
+		orderedNamesByV1Key: make(map[string][]string),
+	}
+}
+
+type ConflictResolvingCache interface {
+	// AddOrModify adds or updates the entry in the cache and calculates what updates to send
+	// to the syncer.  The name is the original name of the v2 resource.  The kvp should be the
+	// converted (i.e. v1) model representation.
+	//
+	// Returns the effective update(s) to send in the syncer.  A nil value in the KVPair
+	// indicates a delete, otherwise it's an add/modify.
+	AddOrModify(name string, kvp *model.KVPair) ([]*model.KVPair, error)
+
+	// Delete an entry in the cache and calculate what updates to send to the syncer.  The name
+	// is the original name of the v2 resource.
+	//
+	// Returns the effective update(s) to send in the syncer.  A nil value in the KVPair
+	// indicates a delete, otherwise it's an add/modify.
+	Delete(name string) ([]*model.KVPair, error)
+
+	// Clear the cache.
+	ClearCache()
+}
+
+// conflictResolvingCache implements the ConflictRecolvingCache interface.
 type conflictResolvingCache struct {
-	kvpsByName map[string]*model.KVPair
+	kvpsByName          map[string]*model.KVPair
 	orderedNamesByV1Key map[string][]string
 }
 
-// addUpdate - adds or updates the entry in the cache.  The name is the original
-// name of the v2 resource.  The kvp should be the converted (i.e. v1) model representation.
-//
-// Returns the effective update(s) to send in the syncer.  A nil value in the KVPair
-// indicates a delete, otherwise it's an add/modify.
 func (c *conflictResolvingCache) AddOrModify(name string, kvp *model.KVPair) ([]*model.KVPair, error) {
 	// Construct the new v1Key string (we just use the default path)
 	v1Key, err := model.KeyToDefaultPath(kvp.Key)
@@ -68,26 +92,24 @@ func (c *conflictResolvingCache) AddOrModify(name string, kvp *model.KVPair) ([]
 
 	logCxt := log.WithFields(log.Fields{
 		"Name": name,
-		"Key": v1Key,
+		"Key":  v1Key,
 	})
 
 	// If we have a value cached for this name, handle the situation where the v1 key has
 	// changed.
 	var response []*model.KVPair
 	if existing := c.kvpsByName[name]; existing != nil {
+		// Get the old key, we know this succeeds because we had to get the default path to put it
+		// in the cache.
 		oldV1Key, err := model.KeyToDefaultPath(existing.Key)
-		if err != nil {
-			return nil, err
-		}
+		cerrors.FatalIfErrored(err)
 
 		// If the key has changed, first handle this as a delete.  This may result in a
 		// delete response that we need to include.
 		if oldV1Key != v1Key {
-			logCxt.WithField("Old key", oldV1Key).Debug("key modified, handle delete first")
+			logCxt.WithField("Old key", oldV1Key).Info("key modified, handle delete first")
 			response, err = c.Delete(name)
-			if err != nil {
-				return nil, err
-			}
+			cerrors.FatalIfErrored(err)
 		}
 	}
 
@@ -138,23 +160,17 @@ func (c *conflictResolvingCache) Delete(name string) ([]*model.KVPair, error) {
 		return nil, fmt.Errorf("delete called for unknown resource: %s", name)
 	}
 
-	// Calculate the key for that resource.
+	// Calculate the key for that resource.  This should succeed because we already called
+	// this to get the entry in the cache.
 	v1Key, err := model.KeyToDefaultPath(kvp.Key)
-	if err != nil {
-		return nil, err
-	}
+	cerrors.FatalIfErrored(err)
 
-	// Get the current set of names that map to this key, and track if this is the
-	// active entry (i.e. the one with the lowest alphanumeric name).
+	// Get the current set of names that map to this key and use this to determine what
+	// updates to send.
 	cns := c.orderedNamesByV1Key[v1Key]
-	if len(cns) == 0 {
-		// Delete called for resource that was never added.  This is a code bug, but handle
-		// gracefully.
-		return nil, fmt.Errorf("delete called for unknown resource: %s", name)
-	}
 
-	// If this is the primary resource in the v1 model then we either need to delete
-	// if there are no conflicting resources, or an update or the new primary resource.
+	// If this is the primary resource in the v1 model then we either need to delete if
+	// there are no conflicting resources, or send an update for the new primary resource.
 	var response []*model.KVPair
 	if cns[0] == name {
 		logCxt.WithField("All conflicting resource names", cns).Debug("non conflicting, or primary resource deleted: sending update")
@@ -171,13 +187,8 @@ func (c *conflictResolvingCache) Delete(name string) ([]*model.KVPair, error) {
 			// configuration - looking up the stored details by name.
 			logCxt.WithField("Primary resource", cns[1]).Debug("conflicting entries: sending update for new primary")
 			kvp := c.kvpsByName[cns[1]]
-			if kvp == nil {
-				return nil, fmt.Errorf("internal error in cache, missing entry: %s", name)
-			}
 			response = []*model.KVPair{kvp}
-
 		}
-		response = append(response, kvp)
 	} else {
 		logCxt.WithFields(log.Fields{
 			"All conflicting resource names": cns,
@@ -194,7 +205,7 @@ func (c *conflictResolvingCache) Delete(name string) ([]*model.KVPair, error) {
 	} else {
 		// Ours was not the only entry in the conflicting names list, so remove our entry
 		// and update the cache (keeping the list ordered).
-		newCns := make([]string, len(cns) - 1)
+		newCns := make([]string, len(cns)-1)
 		i := 0
 		for _, cn := range cns {
 			if cn != name {
@@ -208,8 +219,8 @@ func (c *conflictResolvingCache) Delete(name string) ([]*model.KVPair, error) {
 	return response, nil
 }
 
-// clearCache removes all entries from the cache.
-func (c *conflictResolvingCache) clearCache() {
+// ClearCache removes all entries from the cache.
+func (c *conflictResolvingCache) ClearCache() {
 	log.Debug("Clearing cache data")
 	c.kvpsByName = make(map[string]*model.KVPair)
 	c.orderedNamesByV1Key = make(map[string][]string)

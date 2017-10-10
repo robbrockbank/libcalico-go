@@ -647,16 +647,16 @@ func (fc *fakeConverter) Process(kvp *model.KVPair) ([]*model.KVPair, error) {
 	if kvp.Value == nil {
 		// This is a delete.
 		return []*model.KVPair{
-			{
-				Key: l1Key1,
-			},
-			{
-				Key: l1Key2,
-			},
-		}, cerrors.ErrorParsingDatastoreEntry{
-			RawKey:   "zzzzz",
-			RawValue: "xxxxx",
-		}
+				{
+					Key: l1Key1,
+				},
+				{
+					Key: l1Key2,
+				},
+			}, cerrors.ErrorParsingDatastoreEntry{
+				RawKey:   "zzzzz",
+				RawValue: "xxxxx",
+			}
 	}
 
 	// This is an add.

@@ -28,6 +28,7 @@ import (
 func NewFelixConfigUpdateProcessor() watchersyncer.SyncerUpdateProcessor {
 	return NewConfigUpdateProcessor(
 		reflect.TypeOf(apiv2.FelixConfigurationSpec{}),
+		AllowAnnotations,
 		func(node, name string) model.Key { return model.HostConfigKey{Hostname: node, Name: name} },
 		func(name string) model.Key { return model.GlobalConfigKey{Name: name} },
 		map[string]ValueToStringFn{
