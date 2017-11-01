@@ -32,6 +32,10 @@ var (
 	typeIPPool  = reflect.TypeOf(IPPool{})
 )
 
+func init() {
+	registerType(IPPoolListOptions{})
+}
+
 type IPPoolKey struct {
 	CIDR net.IPNet `json:"-" validate:"required,name"`
 }

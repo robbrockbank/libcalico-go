@@ -31,6 +31,10 @@ var (
 	typePolicy  = reflect.TypeOf(Policy{})
 )
 
+func init() {
+	registerType(PolicyListOptions{})
+}
+
 type PolicyKey struct {
 	Name string `json:"-" validate:"required,name"`
 }

@@ -31,6 +31,11 @@ var (
 	typeNodeBGPConfig    = rawStringType
 )
 
+func init() {
+	registerType(GlobalBGPConfigListOptions{})
+	registerType(NodeBGPConfigListOptions{})
+}
+
 type GlobalBGPConfigKey struct {
 	// The name of the global BGP config key.
 	Name string `json:"-" validate:"required,name"`

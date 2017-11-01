@@ -47,6 +47,10 @@ var (
 	typeBlockAff       = rawStringType
 )
 
+func init() {
+	registerType(BlockAffinityListOptions{})
+}
+
 type BlockAffinityKey struct {
 	CIDR net.IPNet `json:"-" validate:"required,name"`
 	Host string    `json:"-"`

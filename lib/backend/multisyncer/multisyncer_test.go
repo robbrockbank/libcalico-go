@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package watchersyncer_test
+package multisyncer_test
 
 import (
 	"context"

@@ -12,17 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-/*
-watchersyncer package contains a syncer interface that can be used to sync from an
-arbitrary Watcher.
+package multisyncer_test
 
-An optional processor may be specified for each watch type that convert between the
-raw data returned by the watch and the updates returned by the syncer.
+import (
+	"testing"
 
-The implementation could easily be ported to work on the main client Watcher which
-would be the preferred approach once all of the entries that we need to watch are
-defined as resource types.
+	. "github.com/onsi/ginkgo"
+	. "github.com/onsi/gomega"
+)
 
-This can be used in conjunction with the multisyncer that
-*/
-package watchersyncer
+func TestClient(t *testing.T) {
+	RegisterFailHandler(Fail)
+	RunSpecs(t, "Backend multisyncer test suite")
+}

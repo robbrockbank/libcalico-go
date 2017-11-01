@@ -31,6 +31,10 @@ var (
 	typeHostEndpoint  = reflect.TypeOf(HostEndpoint{})
 )
 
+func init() {
+	registerType(HostEndpointListOptions{})
+}
+
 type HostEndpointKey struct {
 	Hostname   string `json:"-" validate:"required,hostname"`
 	EndpointID string `json:"-" validate:"required,namespacedName"`

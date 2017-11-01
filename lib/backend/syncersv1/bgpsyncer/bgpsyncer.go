@@ -18,6 +18,7 @@ import (
 	apiv2 "github.com/projectcalico/libcalico-go/lib/apis/v2"
 	"github.com/projectcalico/libcalico-go/lib/backend/api"
 	"github.com/projectcalico/libcalico-go/lib/backend/model"
+	"github.com/projectcalico/libcalico-go/lib/backend/multisyncer"
 	"github.com/projectcalico/libcalico-go/lib/backend/syncersv1/updateprocessors"
 	"github.com/projectcalico/libcalico-go/lib/backend/watchersyncer"
 )
@@ -27,9 +28,7 @@ import (
 // KDD.  An optional node name may be supplied.  If set, the syncer only watches
 // the specified node rather than all nodes.
 func New(client api.Client, callbacks api.SyncerCallbacks, node string, watchAllNodes bool) api.Syncer {
-	// Create the set of ResourceTypes required for Felix.  Since the update processors
-	// also cache state, we need to create individual ones per syncer rather than create
-	// a common global set.
+	// Create the set of SyncerFactory interfaces required for Felix.
 	// For BGP we always only care about affinity blocks assigned to our own particuar node.
 	// However, depending on whether we are in full-mesh mode or not changes whether we want
 	// to watch all Node resources or just our own.
@@ -37,34 +36,35 @@ func New(client api.Client, callbacks api.SyncerCallbacks, node string, watchAll
 	if watchAllNodes {
 		nodeToWatch = ""
 	}
-	resourceTypes := []watchersyncer.ResourceType{
-		{
+	syncerFactories := []api.SyncerFactory{
+		watchersyncer.Factory{
+			Client:          client,
 			ListInterface:   model.ResourceListOptions{Kind: apiv2.KindIPPool},
 			UpdateProcessor: updateprocessors.NewIPPoolUpdateProcessor(),
 		},
-		{
+		watchersyncer.Factory{
+			Client:          client,
 			ListInterface:   model.ResourceListOptions{Kind: apiv2.KindBGPConfiguration},
 			UpdateProcessor: updateprocessors.NewBGPConfigUpdateProcessor(),
 		},
-		{
+		watchersyncer.Factory{
+			Client: client,
 			ListInterface: model.ResourceListOptions{
 				Kind: apiv2.KindNode,
 				Name: nodeToWatch,
 			},
 			UpdateProcessor: updateprocessors.NewBGPNodeUpdateProcessor(),
 		},
-		{
+		watchersyncer.Factory{
+			Client:          client,
 			ListInterface:   model.ResourceListOptions{Kind: apiv2.KindBGPPeer},
 			UpdateProcessor: updateprocessors.NewBGPPeerUpdateProcessor(),
 		},
-		{
+		watchersyncer.Factory{
+			Client:        client,
 			ListInterface: model.BlockAffinityListOptions{Host: node},
 		},
 	}
 
-	return watchersyncer.New(
-		client,
-		resourceTypes,
-		callbacks,
-	)
+	return multisyncer.New(syncerFactories, callbacks)
 }

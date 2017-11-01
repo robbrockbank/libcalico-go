@@ -50,6 +50,9 @@ func registerResourceInfo(kind string, plural string, typeOf reflect.Type) {
 	}
 	resourceInfoByKind[kind] = ri
 	resourceInfoByPlural[plural] = ri
+
+	// Also register the type for the keys processing.
+	registerType(ResourceListOptions{Kind: kind})
 }
 
 func init() {

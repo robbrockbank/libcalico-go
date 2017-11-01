@@ -33,6 +33,12 @@ var (
 	typeReadyFlag     = rawBoolType
 )
 
+func init() {
+	registerType(ReadyFlagListOptions{})
+	registerType(GlobalConfigListOptions{})
+	registerType(HostConfigListOptions{})
+}
+
 type ReadyFlagKey struct {
 }
 
@@ -54,6 +60,20 @@ func (key ReadyFlagKey) valueType() reflect.Type {
 
 func (key ReadyFlagKey) String() string {
 	return "ReadyFlagKey()"
+}
+
+type ReadyFlagListOptions struct {
+}
+
+func (options ReadyFlagListOptions) defaultPathRoot() string {
+	return "/calico/v1/Ready"
+}
+
+func (options ReadyFlagListOptions) KeyFromDefaultPath(path string) Key {
+	if path != "/calico/v1/Ready" {
+		return nil
+	}
+	return ReadyFlagKey{}
 }
 
 type GlobalConfigKey struct {
