@@ -33,12 +33,8 @@ import (
 	"github.com/projectcalico/libcalico-go/lib/selector"
 )
 
-// Split the validation into three groups.  Since a struct validator will trump
-// any field validation or sub-structure validation we need to split these out.
-var validatorField *validator.Validate
-var validatorPrimary *validator.Validate
-var validatorSecondary *validator.Validate
-var validatorTertiary *validator.Validate
+// Define a validate that has our registered validation functions.
+var validate *validator.Validate
 
 // Maximum size of annotations.
 const totalAnnotationSizeLimitB int64 = 256 * (1 << 10) // 256 kB`
@@ -90,17 +86,7 @@ var (
 func Validate(current interface{}) error {
 	// Perform field-only validation first, that way the struct validators can assume
 	// individual fields are valid format.
-	if err := validatorField.Struct(current); err != nil {
-		return convertError(err)
-	}
-	// Then perform primary, secondary and tertiary struct-based validation.
-	if err := validatorPrimary.Struct(current); err != nil {
-		return convertError(err)
-	}
-	if err := validatorSecondary.Struct(current); err != nil {
-		return convertError(err)
-	}
-	if err := validatorTertiary.Struct(current); err != nil {
+	if err := validate.Struct(current); err != nil {
 		return convertError(err)
 	}
 	return nil
@@ -121,10 +107,7 @@ func convertError(err error) errors.ErrorValidation {
 
 func init() {
 	// Initialise static data.
-	validatorField = validator.New(&validator.Config{TagName: "validate", FieldNameTag: "json"})
-	validatorPrimary = validator.New(&validator.Config{TagName: "validate", FieldNameTag: "json"})
-	validatorSecondary = validator.New(&validator.Config{TagName: "validate", FieldNameTag: "json"})
-	validatorTertiary = validator.New(&validator.Config{TagName: "validate", FieldNameTag: "json"})
+	validate = validator.New(&validator.Config{TagName: "validate", FieldNameTag: "json"})
 
 	// Register field validators.
 	registerFieldValidator("action", validateAction)
@@ -147,41 +130,41 @@ func init() {
 	registerFieldValidator("netv6", validateIPv6Network)
 	registerFieldValidator("net", validateIPNetwork)
 
-	// Override the default CIDR validator.  Validates an arbitrary CIDR (does not
+	// Override the default CIDR validate.  Validates an arbitrary CIDR (does not
 	// need to be correctly masked).  Also accepts an IP address without a mask.
 	registerFieldValidator("cidrv4", validateCIDRv4)
 	registerFieldValidator("cidrv6", validateCIDRv6)
 	registerFieldValidator("cidr", validateCIDR)
 
 	// Register structs that have no additional sub structs for first round of validation.
-	registerStructValidator(validatorPrimary, validateProtocol, numorstring.Protocol{})
-	registerStructValidator(validatorPrimary, validateProtoPort, api.ProtoPort{})
-	registerStructValidator(validatorPrimary, validatePort, numorstring.Port{})
-	registerStructValidator(validatorPrimary, validateEndpointPort, api.EndpointPort{})
-	registerStructValidator(validatorPrimary, validateIPNAT, api.IPNAT{})
-	registerStructValidator(validatorPrimary, validateICMPFields, api.ICMPFields{})
-	registerStructValidator(validatorPrimary, validateIPPoolSpec, api.IPPoolSpec{})
-	registerStructValidator(validatorPrimary, validateNodeSpec, api.NodeSpec{})
-	registerStructValidator(validatorPrimary, validateObjectMeta, metav1.ObjectMeta{})
+	registerStructValidator(validateProtocol, numorstring.Protocol{})
+	registerStructValidator(validateProtoPort, api.ProtoPort{})
+	registerStructValidator(validatePort, numorstring.Port{})
+	registerStructValidator(validateEndpointPort, api.EndpointPort{})
+	registerStructValidator(validateIPNAT, api.IPNAT{})
+	registerStructValidator(validateICMPFields, api.ICMPFields{})
+	registerStructValidator(validateIPPoolSpec, api.IPPoolSpec{})
+	registerStructValidator(validateNodeSpec, api.NodeSpec{})
+	registerStructValidator(validateObjectMeta, metav1.ObjectMeta{})
 
 	// Register structs that have one level of additional structs to validate.
-	registerStructValidator(validatorSecondary, validateWorkloadEndpointSpec, api.WorkloadEndpointSpec{})
-	registerStructValidator(validatorSecondary, validateHostEndpointSpec, api.HostEndpointSpec{})
-	registerStructValidator(validatorSecondary, validateRule, api.Rule{})
+	registerStructValidator(validateWorkloadEndpointSpec, api.WorkloadEndpointSpec{})
+	registerStructValidator(validateHostEndpointSpec, api.HostEndpointSpec{})
+	registerStructValidator(validateRule, api.Rule{})
 
 	// Register structs that have two level of additional structs to validate.
-	registerStructValidator(validatorTertiary, validateNetworkPolicy, api.NetworkPolicy{})
-	registerStructValidator(validatorTertiary, validateGlobalNetworkPolicy, api.GlobalNetworkPolicy{})
+	registerStructValidator(validateNetworkPolicy, api.NetworkPolicy{})
+	registerStructValidator(validateGlobalNetworkPolicy, api.GlobalNetworkPolicy{})
 }
 
 // reason returns the provided error reason prefixed with an identifier that
-// allows the string to be used as the field tag in the validator and then
-// re-extracted as the reason when the validator returns a field error.
+// allows the string to be used as the field tag in the validate and then
+// re-extracted as the reason when the validate returns a field error.
 func reason(r string) string {
 	return reasonString + r
 }
 
-// extractReason extracts the error reason from the field tag in a validator
+// extractReason extracts the error reason from the field tag in a validate
 // field error (if there is one).
 func extractReason(tag string) string {
 	if strings.HasPrefix(tag, reasonString) {
@@ -192,15 +175,12 @@ func extractReason(tag string) string {
 
 func registerFieldValidator(key string, fn validator.Func) {
 	// We need to register the field validation funcs for all validators otherwise
-	// the validator panics on an unknown validation type.
-	validatorField.RegisterValidation(key, fn)
-	validatorPrimary.RegisterValidation(key, fn)
-	validatorSecondary.RegisterValidation(key, fn)
-	validatorTertiary.RegisterValidation(key, fn)
+	// the validate panics on an unknown validation type.
+	validate.RegisterValidation(key, fn)
 }
 
-func registerStructValidator(validator *validator.Validate, fn validator.StructLevelFunc, t ...interface{}) {
-	validator.RegisterStructValidation(fn, t...)
+func registerStructValidator(fn validator.StructLevelFunc, t ...interface{}) {
+	validate.RegisterStructValidation(fn, t...)
 }
 
 func validateAction(v *validator.Validate, topStruct reflect.Value, currentStructOrField reflect.Value, field reflect.Value, fieldType reflect.Type, fieldKind reflect.Kind, param string) bool {
