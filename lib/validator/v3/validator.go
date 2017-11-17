@@ -22,7 +22,7 @@ import (
 	"strings"
 
 	log "github.com/sirupsen/logrus"
-	"gopkg.in/go-playground/validator.v8"
+	"gopkg.in/go-playground/validator.v9"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	k8svalidation "k8s.io/apimachinery/pkg/util/validation"
 
@@ -111,9 +111,9 @@ func convertError(err error) errors.ErrorValidation {
 	for _, f := range err.(validator.ValidationErrors) {
 		verr.ErroredFields = append(verr.ErroredFields,
 			errors.ErroredField{
-				Name:   f.Name,
-				Value:  f.Value,
-				Reason: extractReason(f.Tag),
+				Name:   f.Namespace(),
+				Value:  f.Value(),
+				Reason: extractReason(f.Tag()),
 			})
 	}
 	return verr
