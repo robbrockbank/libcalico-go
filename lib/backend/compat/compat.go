@@ -39,7 +39,7 @@ func NewAdaptor(c api.Client) *ModelAdaptor {
 	return &ModelAdaptor{client: c}
 }
 
-func (c *ModelAdaptor) EnsureInitialized() error {
+func (c *ModelAdaptor) EnsureInitialized(ctx context.Context) error {
 	return c.client.EnsureInitialized()
 }
 
