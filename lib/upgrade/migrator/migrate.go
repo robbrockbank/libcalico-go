@@ -661,7 +661,10 @@ func (m *migrationHelper) queryAndConvertV1ToV3Nodes(data *MigrationData) error 
 func (m *migrationHelper) ShouldMigrate() (bool, error) {
 	ci, err := m.clientv3.ClusterInformation().Get(context.Background(), "default", options.GetOptions{})
 	if err == nil {
-		if canMigrate(ci.Spec.CalicoVersion) {
+		migrate, err := versionRequiresMigration(ci.Spec.CalicoVersion)
+		if err != nil {
+			return false, err
+		} else if migrate {
 			log.Debugf("ClusterInformation contained CalicoVersion %s and indicates migration is needed", ci.Spec.CalicoVersion)
 			return true, nil
 		}
@@ -690,7 +693,7 @@ func (m *migrationHelper) ShouldMigrate() (bool, error) {
 	}
 
 	// Migrate only if it is possible to migrate from the current version
-	if !canMigrate(v) {
+	if !versionRequiresMigration(v) {
 		log.Debugf("Migration to v3 requires a base of Calico v2.6.4+, currently at %s", v)
 		return false, errors.New(fmt.Sprintf("Migration to v3 requires a base of Calico v2.6.4+, currently at %s", v))
 	}
@@ -707,22 +710,32 @@ func (m *migrationHelper) getV1ClusterVersion() (string, error) {
 	return "", err
 }
 
-// canMigrate returns true if the given version can be upgraded, otherwise
-// returns false.
-func canMigrate(v string) bool {
+// versionRequiresMigration returns true if the given version requires upgration of the
+// data model, false otherwise.  Returns an error if it was not possible to parse the
+// versions, or if the version was less than the minimum required for upgrade.
+func versionRequiresMigration(v string) (bool, error) {
 	sv, err := semver.NewVersion(strings.TrimPrefix(v, "v"))
-	// Using 2.6.3 for the comparison point because '2.6.4-rc1' is LessThan
-	// '2.6.4', and we want the -rc1 to be upgradeable.
-	sv263 := semver.New("2.6.3")
-	sv30 := semver.New("3.0.0-0")
 	if err != nil {
-		log.Warnf("Error converting version %s: %v", v, err)
-		return false
-	} else if sv263.LessThan(*sv) && sv.LessThan(*sv30) {
-		return true
+		log.Warnf("unable to parse Calico version %s: %v", v, err)
+		return false, err
 	}
-	log.Warnf("Cannot migrate from version %s", v)
-	return false
+
+	if sv.Major >= 3 {
+		log.Debugf("major version is already >= 3: %s", v)
+		return false, nil
+	}
+
+	// The major version is less than 3.  We require a minimum version of 2.6.4 so
+	// compare against a semver of 2.6.3.
+	sv263 := semver.New("2.6.3")
+	if sv.Compare(*sv263) > 0 {
+		return true, nil
+	}
+
+	// We must have a version < 2.6.4 (including pre-releases).  This is an error case
+	// and we cannot allow upgrade to continue.
+	log.Infof("Cannot migrate from version %s", v)
+	return false, fmt.Errorf("migration to v3 requires a base of Calico v2.6.4+, currently at %s", v)
 
 }
 
