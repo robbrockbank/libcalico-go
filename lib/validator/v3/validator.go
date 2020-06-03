@@ -98,6 +98,7 @@ var (
 	protocolAndHTTPMsg    = "rules that specify HTTP fields must set protocol to TCP or empty"
 	globalSelectorEntRule = fmt.Sprintf("%v can only be used in an EntityRule namespaceSelector", globalSelector)
 	globalSelectorOnly    = fmt.Sprintf("%v cannot be combined with other selectors", globalSelector)
+	debuggingLogLevelnRegex = regexp.MustCompile("^(" + string(api.LogLevelInfo) + "|" + string(api.LogLevelDebug) + ")$")
 
 	ipv4LinkLocalNet = net.IPNet{
 		IP:   net.ParseIP("169.254.0.0"),
@@ -167,6 +168,7 @@ func init() {
 	registerFieldValidator("routeSource", validateRouteSource)
 	registerFieldValidator("wireguardPublicKey", validateWireguardPublicKey)
 	registerFieldValidator("IP:port", validateIPPort)
+	registerFieldValidator("debuggingLogLevel", validateDebuggingLogLevel)
 
 	// Register network validators (i.e. validating a correctly masked CIDR).  Also
 	// accepts an IP address without a mask (assumes a full mask).
@@ -203,6 +205,7 @@ func init() {
 	registerStructValidator(validate, validateRuleMetadata, api.RuleMetadata{})
 	registerStructValidator(validate, validateRouteTableRange, api.RouteTableRange{})
 	registerStructValidator(validate, validateBGPConfigurationSpec, api.BGPConfigurationSpec{})
+	registerStructValidator(validate, validateDebuggingConfiguration, api.DebuggingConfiguration{})
 }
 
 // reason returns the provided error reason prefixed with an identifier that
@@ -340,6 +343,12 @@ func validateMAC(fl validator.FieldLevel) bool {
 		return false
 	}
 	return true
+}
+
+func validateDebuggingLogLevel(fl validator.FieldLevel) bool {
+	s := fl.Field().String()
+	log.Debugf("Validate LogLevel Mode: %s", s)
+	return debuggingLogLevelnRegex.MatchString(s)
 }
 
 func validateIptablesBackend(fl validator.FieldLevel) bool {
@@ -1470,6 +1479,57 @@ func validateCommunityValue(val string, fieldName string, structLevel validator.
 			structLevel.ReportError(reflect.ValueOf(val), fieldName, "",
 				reason(fmt.Sprintf("invalid community value, expected %d bit value", bitSize)), "")
 		}
+	}
+}
+
+func validateDebuggingConfiguration(structLevel validator.StructLevel) {
+	dc := structLevel.Current().Interface().(api.DebuggingConfiguration)
+
+	// For each component/component+node only one configuration is allowed. Validate that.
+	componentSetting := make(map[string]bool)
+
+	spec := dc.Spec
+	for _, t := range spec.Configuration {
+		if ok, msg := api.IsValidDebuggingConfigurationComponent(t.Component); !ok {
+			structLevel.ReportError(
+				reflect.ValueOf(dc.Name),
+				"Spec.ComponentConfiguration",
+				"",
+				reason(fmt.Sprintf("%s is not a valid component. %s", t.Component, msg)),
+				"",
+			)
+		}
+
+		if t.Node != "" {
+			if ok, msg := api.IsValidDebuggingConfigurationNode(t.Component); !ok {
+				structLevel.ReportError(
+					reflect.ValueOf(dc.Name),
+					"Spec.ComponentConfiguration.Node",
+					"",
+					reason(fmt.Sprintf("%s", msg)),
+					"",
+				)
+			}
+		}
+
+		if _, ok := componentSetting[string(t.Component)+t.Node]; ok {
+			var msg string
+			if t.Node != "" {
+				msg = fmt.Sprintf("Configuration for component:%v on node:%s present multiple times\n",
+					t.Component, t.Node)
+			} else {
+				msg = fmt.Sprintf("Configuration for component:%v present multiple times\n",
+					t.Component)
+			}
+			structLevel.ReportError(
+				reflect.ValueOf(dc.Name),
+				"Spec.ComponentConfiguration",
+				"",
+				reason(fmt.Sprintf("%s", msg)),
+				"",
+			)
+		}
+		componentSetting[string(t.Component)+t.Node] = true
 	}
 }
 
