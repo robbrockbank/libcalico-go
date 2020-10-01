@@ -17,6 +17,7 @@ package k8s
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"sync"
 
@@ -274,6 +275,43 @@ func CreateKubernetesClientset(ca *apiconfig.CalicoAPIConfigSpec) (*rest.Config,
 		return nil, nil, resources.K8sErrorToCalico(err, nil)
 	}
 	return config, cs, nil
+}
+
+// BestEffortGetKubernetesClientSet makes the best effort at returning a Kubernetes clientset. The following order
+// is used:
+// - If the calico client is itself a k8s-backed client, then return the same clientset
+// - If the API config contains kubernetes data (despite being for etcd) then use that
+// - Check for configuration via standard environments (KUBECONFIG, KUBERNETES_MASTER)
+// - Attempt in-cluster
+func BestEffortGetKubernetesClientSet(calicoClient api.Client, ca *apiconfig.CalicoAPIConfigSpec) *kubernetes.Clientset {
+	// This is the Kubernetes backend datastore so we already have a k8s client set, use that.
+	if k, ok := calicoClient.(*KubeClient); ok {
+		return k.ClientSet
+	}
+
+	// Attempt to create a clientset from the supplied API config. This may fail if the config does not contain k8s
+	// info.
+	if _, clientset, err := CreateKubernetesClientset(ca); err != nil {
+		log.WithError(err).Debug("Unable to create Kubernetes clientset from api config")
+	} else {
+		return clientset
+	}
+
+	// Try to get the kubernetes config either from environments or in-cluster.
+	cfgFile := os.Getenv("KUBECONFIG")
+	master := os.Getenv("KUBERNETES_MASTER")
+	cfg, err := clientcmd.BuildConfigFromFlags(master, cfgFile)
+	if err != nil {
+		log.WithError(err).Info("KUBECONFIG environment variable not found, attempting in-cluster")
+		// Attempt in cluster config
+		if cfg, err = rest.InClusterConfig(); err != nil {
+			return nil
+		}
+	}
+	if clientset, err := kubernetes.NewForConfig(cfg); err == nil {
+		return clientset
+	}
+	return nil
 }
 
 // registerResourceClient registers a specific resource client with the associated
